@@ -4,6 +4,20 @@
 
 <section class="panel">
   <div class="panel-head">
+    <h2>분기별 합산 Capex 추이</h2>
+    <span class="panel-sub">Microsoft+Amazon+Alphabet+Meta+Oracle 합산 &middot; $B</span>
+  </div>
+  {% if capex_chart_labels %}
+  <div style="position: relative; height: 280px; margin-bottom: 12px;">
+    <canvas id="capexChart"></canvas>
+  </div>
+  {% else %}
+  <div class="table-wrap"><table><tbody><tr><td class="empty">차트를 그릴 데이터 없음</td></tr></tbody></table></div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
     <h2>하이퍼스케일러 Capex / OCF / FCF</h2>
     <span class="panel-sub">SEC EDGAR XBRL &middot; 최근 8개 분기 (10-Q)</span>
   </div>
@@ -36,5 +50,52 @@
     </table>
   </div>
 </section>
+
+{% if capex_chart_labels %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+(function () {
+  var ctx = document.getElementById('capexChart').getContext('2d');
+  var labels = {{ capex_chart_labels | tojson }};
+  var values = {{ capex_chart_values | tojson }};
+
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: '합산 Capex ($B)',
+        data: values,
+        backgroundColor: '#7C6FE0',
+        borderRadius: 4,
+        maxBarThickness: 42,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: function (item) { return '$' + item.formattedValue + 'B'; }
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: { callback: function (v) { return '$' + v + 'B'; } },
+          grid: { color: '#E5E7EF' }
+        },
+        x: {
+          grid: { display: false }
+        }
+      }
+    }
+  });
+})();
+</script>
+{% endif %}
 
 {% endblock %}

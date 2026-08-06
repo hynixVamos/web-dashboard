@@ -101,7 +101,28 @@ def stocks_page():
 def hyperscaler_page():
     ctx = _common_context("hyperscaler")
     cache = ctx.pop("_cache")
-    return render_template("hyperscaler.html", hyperscaler=cache["hyperscaler"], **ctx)
+    hyper_rows = cache["hyperscaler"]
+
+    # 분기(period_end)별로 5개 하이퍼스케일러 Capex 합산 -> 시계열 막대그래프용
+    capex_by_quarter = {}
+    for row in hyper_rows:
+        period = row.get("period_end")
+        capex = row.get("capex_usd")
+        if period is None or capex is None:
+            continue
+        capex_by_quarter[period] = capex_by_quarter.get(period, 0) + capex
+
+    quarters_sorted = sorted(capex_by_quarter.keys())
+    capex_chart_labels = quarters_sorted
+    capex_chart_values_billion = [round(capex_by_quarter[q] / 1_000_000_000, 1) for q in quarters_sorted]
+
+    return render_template(
+        "hyperscaler.html",
+        hyperscaler=hyper_rows,
+        capex_chart_labels=capex_chart_labels,
+        capex_chart_values=capex_chart_values_billion,
+        **ctx,
+    )
 
 
 @app.route("/adr")
