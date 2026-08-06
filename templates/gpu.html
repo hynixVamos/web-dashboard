@@ -5,7 +5,7 @@
 <section class="panel">
   <div class="panel-head">
     <h2>GPU 렌탈가 (Vast.ai)</h2>
-    <span class="panel-sub">$/GPU-hr</span>
+    <span class="panel-sub">$/GPU-hr &middot; 전일대비는 전날 마지막 스냅샷 기준</span>
   </div>
   <div class="table-wrap">
     <table>
@@ -13,6 +13,7 @@
         <tr>
           <th class="align-left">모델</th>
           <th>최저가</th>
+          <th>전일대비</th>
           <th>25th pct</th>
           <th>샘플수</th>
         </tr>
@@ -22,11 +23,15 @@
         <tr>
           <td class="align-left">{{ row.gpu_model }}</td>
           <td class="mono num">{% if row.min_price_usd_hr is not none %}${{ "%.4f"|format(row.min_price_usd_hr) }}{% else %}—{% endif %}</td>
+          {% set chg = row.change_1d_pct %}
+          <td class="mono num {% if chg is not none %}{{ 'pos' if chg > 0 else ('neg' if chg < 0 else '') }}{% endif %}">
+            {% if chg is not none %}{{ "%+.2f"|format(chg) }}%{% else %}—{% endif %}
+          </td>
           <td class="mono num">{% if row.p25_price_usd_hr is not none %}${{ "%.4f"|format(row.p25_price_usd_hr) }}{% else %}—{% endif %}</td>
           <td class="mono num dim">{{ row.sample_count }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="4" class="empty">Vast.ai 데이터 없음 (API 키 미설정 또는 조회 실패)</td></tr>
+        <tr><td colspan="5" class="empty">Vast.ai 데이터 없음 (API 키 미설정 또는 조회 실패)</td></tr>
         {% endfor %}
       </tbody>
     </table>
