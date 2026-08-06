@@ -21,11 +21,11 @@ RUNPOD_GRAPHQL_URL = "https://api.runpod.io/graphql"
 # requests의 단일 timeout 값은 "연결"에만 적용되고, 연결된 이후 서버가
 # 응답을 질질 끄는 경우(hang)에는 무한정 대기할 수 있다.
 # read_timeout을 명시적으로 짧게 잡아서 반드시 끊고 넘어가게 한다.
-CONNECT_TIMEOUT = 5
-READ_TIMEOUT = 15
+CONNECT_TIMEOUT = 4
+READ_TIMEOUT = 10
 TIMEOUT = (CONNECT_TIMEOUT, READ_TIMEOUT)
 
-MAX_RETRIES = 2
+MAX_RETRIES = 1
 
 
 def _today_str():
@@ -43,8 +43,7 @@ def _request_with_retry(method, url, **kwargs):
             return resp
         except Exception as e:
             last_exc = e
-            print(f"[GPU] 요청 실패 (시도 {attempt}/{MAX_RETRIES}): {url} - {e}")
-            time.sleep(1)
+            print(f"[GPU] 요청 실패 (시도 {attempt}/{MAX_RETRIES}): {url} - {e}", flush=True)
     raise last_exc
 
 
@@ -213,7 +212,7 @@ def run():
     vast_rows = summarize_vast_by_gpu(vast_offers_by_group)
     runpod_rows = fetch_runpod_prices()
 
-    print(f"[GPU] Vast.ai {len(vast_rows)}개 모델, RunPod {len(runpod_rows)}개 모델 수집 완료")
+    print(f"[GPU] Vast.ai {len(vast_rows)}개 모델, RunPod {len(runpod_rows)}개 모델 수집 완료", flush=True)
     return {"vast": vast_rows, "runpod": runpod_rows}
 
 

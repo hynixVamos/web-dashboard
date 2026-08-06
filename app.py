@@ -128,6 +128,7 @@ def health():
         "status": "ok",
         "last_updated": cache["last_updated"],
         "last_error": cache["last_error"],
+        "refreshing": cache.get("refreshing", False),
     })
 
 

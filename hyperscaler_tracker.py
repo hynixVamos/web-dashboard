@@ -17,11 +17,11 @@ HEADERS = {"User-Agent": SEC_USER_AGENT}
 # (connect_timeout, read_timeout) 튜플로 분리.
 # 단일 timeout 값은 "연결"에만 적용되고, 연결 이후 서버가 응답을
 # 질질 끄는 경우(hang)에는 무한정 대기할 수 있어 read timeout을 명시한다.
-CONNECT_TIMEOUT = 5
-READ_TIMEOUT = 15
+CONNECT_TIMEOUT = 4
+READ_TIMEOUT = 10
 TIMEOUT = (CONNECT_TIMEOUT, READ_TIMEOUT)
 
-MAX_RETRIES = 2
+MAX_RETRIES = 1
 
 
 def fetch_company_facts(cik: str):
@@ -34,9 +34,8 @@ def fetch_company_facts(cik: str):
             return resp.json()
         except Exception as e:
             last_exc = e
-            print(f"[HYPERSCALER] CIK {cik} 조회 실패 (시도 {attempt}/{MAX_RETRIES}): {e}")
-            time.sleep(1)
-    print(f"[HYPERSCALER] CIK {cik} 최종 실패: {last_exc}")
+            print(f"[HYPERSCALER] CIK {cik} 조회 실패 (시도 {attempt}/{MAX_RETRIES}): {e}", flush=True)
+    print(f"[HYPERSCALER] CIK {cik} 최종 실패: {last_exc}", flush=True)
     return None
 
 
@@ -82,6 +81,7 @@ def run():
     all_rows = []
 
     for company, cik in HYPERSCALER_CIKS.items():
+        print(f"[HYPERSCALER] {company} (CIK {cik}) 조회 중...", flush=True)
         facts = fetch_company_facts(cik)
         if facts is None:
             continue
@@ -109,7 +109,7 @@ def run():
 
         time.sleep(0.3)  # SEC fair use rate limit 준수
 
-    print(f"[HYPERSCALER] {len(all_rows)}개 분기 데이터 수집 완료")
+    print(f"[HYPERSCALER] {len(all_rows)}개 분기 데이터 수집 완료", flush=True)
     return all_rows
 
 

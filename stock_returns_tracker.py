@@ -19,11 +19,13 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 # (connect_timeout, read_timeout) 튜플로 분리.
 # 단일 timeout 값은 "연결"에만 적용되고, 연결 이후 서버가 응답을
 # 질질 끄는 경우(hang)에는 무한정 대기할 수 있어 read timeout을 명시한다.
-CONNECT_TIMEOUT = 5
-READ_TIMEOUT = 12
+CONNECT_TIMEOUT = 4
+READ_TIMEOUT = 8
 TIMEOUT = (CONNECT_TIMEOUT, READ_TIMEOUT)
 
-MAX_RETRIES = 2
+# 12개 종목을 순차로 조회하므로, 종목당 재시도를 1회로 줄여 최악의 경우
+# 누적 대기시간을 크게 단축한다 (12개 * 최대 (4+8)*2 = 288초 -> 재시도 1회면 144초).
+MAX_RETRIES = 1
 
 
 def fetch_daily_closes(ticker: str, range_="2y"):
@@ -44,11 +46,10 @@ def fetch_daily_closes(ticker: str, range_="2y"):
             break
         except Exception as e:
             last_exc = e
-            print(f"[STOCK] {ticker} 조회 실패 (시도 {attempt}/{MAX_RETRIES}): {e}")
-            time.sleep(1)
+            print(f"[STOCK] {ticker} 조회 실패 (시도 {attempt}/{MAX_RETRIES}): {e}", flush=True)
 
     if data is None:
-        print(f"[STOCK] {ticker} 최종 실패: {last_exc}")
+        print(f"[STOCK] {ticker} 최종 실패: {last_exc}", flush=True)
         return []
 
     try:
@@ -108,9 +109,10 @@ def compute_returns(series):
 def run():
     """전체 유니버스에 대해 수익률을 계산하고 리스트로 반환."""
     rows = []
-    for stock in STOCK_UNIVERSE:
+    for idx, stock in enumerate(STOCK_UNIVERSE, 1):
         ticker = stock["ticker"]
         name = stock["name"]
+        print(f"[STOCK] ({idx}/{len(STOCK_UNIVERSE)}) {ticker} 조회 중...", flush=True)
 
         series = fetch_daily_closes(ticker)
         if not series:
@@ -123,7 +125,7 @@ def run():
 
         time.sleep(0.5)  # Yahoo 레이트리밋 방지용 딜레이
 
-    print(f"[STOCK] {len(rows)}개 종목 수익률 계산 완료")
+    print(f"[STOCK] {len(rows)}개 종목 수익률 계산 완료", flush=True)
     return rows
 
 
