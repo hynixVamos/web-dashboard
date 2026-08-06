@@ -110,10 +110,15 @@ def _refresh_once():
         CACHE["last_updated"] = datetime.now(timezone.utc).isoformat()
         CACHE["last_error"] = "; ".join(error_msgs) if error_msgs else None
         CACHE["refreshing"] = False
+        # 진단용: 이 순간 실제로 CACHE 안에 몇 개가 들어갔는지 그 자리에서 바로 확인
+        _diag_gpu_len_after_write = len(CACHE["gpu"])
+        _diag_stock_len_after_write = len(CACHE["stocks"])
 
     elapsed = round(time.time() - t0, 1)
     _log(f"[CACHE] 갱신 완료 ({elapsed}초 소요): gpu={len(gpu_rows)} stocks={len(stock_rows)} "
          f"hyperscaler={len(hyper_rows)} errors={CACHE['last_error']}")
+    _log(f"[CACHE][DIAG] 쓰기 직후 CACHE 내부 실측: gpu={_diag_gpu_len_after_write} "
+         f"stocks={_diag_stock_len_after_write} (CACHE id={id(CACHE)})")
 
 
 def _refresh_loop():
@@ -154,4 +159,8 @@ def diag_info():
             "module_file": __file__,
             "pid": os.getpid(),
             "started_flag": _started,
+            "gpu_len_now": len(CACHE["gpu"]),
+            "stocks_len_now": len(CACHE["stocks"]),
+            "hyperscaler_len_now": len(CACHE["hyperscaler"]),
+            "last_updated_now": CACHE["last_updated"],
         }
