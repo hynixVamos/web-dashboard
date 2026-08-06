@@ -22,6 +22,23 @@ import threading
 import time
 from datetime import datetime, timezone
 
+# --- IPv4 강제 패치 ---
+# 일부 클라우드 컨테이너 환경(Render 포함 가능성)에서 외부 접속 시 IPv6 경로가
+# 먼저 시도되는데, 그 경로가 "응답 없이 조용히 막혀있는(블랙홀)" 상태이면
+# 소켓 connect 시도가 설정한 timeout을 넘어서까지 비정상적으로 오래 걸리거나
+# 사실상 멈춘 것처럼 보일 수 있다. urllib3의 주소 확인 함수를 패치해서
+# IPv4만 쓰도록 강제해, 이 클래스의 문제를 원천 차단한다.
+try:
+    import urllib3.util.connection as _urllib3_cn
+
+    def _allowed_gai_family():
+        return socket.AF_INET  # IPv4만 사용
+
+    _urllib3_cn.allowed_gai_family = _allowed_gai_family
+    print("[CACHE] IPv4 강제 패치 적용됨", flush=True)
+except Exception as _e:
+    print(f"[CACHE] IPv4 강제 패치 실패 (무시하고 진행): {_e}", flush=True)
+
 import gpu_rental_tracker
 import stock_returns_tracker
 import hyperscaler_tracker
