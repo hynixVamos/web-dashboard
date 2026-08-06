@@ -17,11 +17,35 @@ from config import VAST_API_KEY, RUNPOD_API_KEY, GPU_MODEL_GROUPS, GPU_MODELS_TO
 VAST_BUNDLES_URL = "https://console.vast.ai/api/v0/bundles"
 RUNPOD_GRAPHQL_URL = "https://api.runpod.io/graphql"
 
-TIMEOUT = 20
+# (connect_timeout, read_timeout) 튜플로 분리.
+# requests의 단일 timeout 값은 "연결"에만 적용되고, 연결된 이후 서버가
+# 응답을 질질 끄는 경우(hang)에는 무한정 대기할 수 있다.
+# read_timeout을 명시적으로 짧게 잡아서 반드시 끊고 넘어가게 한다.
+CONNECT_TIMEOUT = 5
+READ_TIMEOUT = 15
+TIMEOUT = (CONNECT_TIMEOUT, READ_TIMEOUT)
+
+MAX_RETRIES = 2
 
 
 def _today_str():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _request_with_retry(method, url, **kwargs):
+    """requests 호출을 재시도 로직으로 감싼 헬퍼. 항상 TIMEOUT을 강제 적용한다."""
+    kwargs.setdefault("timeout", TIMEOUT)
+    last_exc = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            resp = requests.request(method, url, **kwargs)
+            resp.raise_for_status()
+            return resp
+        except Exception as e:
+            last_exc = e
+            print(f"[GPU] 요청 실패 (시도 {attempt}/{MAX_RETRIES}): {url} - {e}")
+            time.sleep(1)
+    raise last_exc
 
 
 def _fetch_offers(order_direction="asc", limit=500):
@@ -44,11 +68,10 @@ def _fetch_offers(order_direction="asc", limit=500):
         "order": [["dph_total", order_direction]],
     }
     try:
-        resp = requests.post(VAST_BUNDLES_URL, headers=headers, json=body, timeout=TIMEOUT)
-        resp.raise_for_status()
+        resp = _request_with_retry("POST", VAST_BUNDLES_URL, headers=headers, json=body)
         data = resp.json()
     except Exception as e:
-        print(f"[GPU][Vast.ai] {order_direction} 조회 실패: {e}")
+        print(f"[GPU][Vast.ai] {order_direction} 조회 최종 실패: {e}")
         return []
 
     return data.get("offers", data if isinstance(data, list) else [])
@@ -76,8 +99,6 @@ def fetch_vast_offers_by_group():
     all_offers = list(combined.values())
 
     # gpu_name 문자열 매칭으로 그룹별 분류
-    # (Vast.ai 표기: "H100 SXM", "H100_SXM", "H100 PCIe" 등 공백/언더스코어 혼재 가능하므로
-    #  두 문자 다 제거한 뒤 비교)
     def _normalize(s):
         return str(s).lower().replace("_", "").replace(" ", "")
 
@@ -85,7 +106,6 @@ def fetch_vast_offers_by_group():
     for offer in all_offers:
         gpu_name_norm = _normalize(offer.get("gpu_name", ""))
         for display_name, variants in GPU_MODEL_GROUPS.items():
-            # 그룹명 자체의 핵심 토큰(H100, H200, B200, A100, L40S, RTX 4090, RTX 5090)으로 매칭
             key_token = _normalize(display_name.split(" (")[0])
             if key_token in gpu_name_norm:
                 result[display_name].append(offer)
@@ -154,16 +174,15 @@ def fetch_runpod_prices():
     }
     """
     try:
-        resp = requests.post(
+        resp = _request_with_retry(
+            "POST",
             RUNPOD_GRAPHQL_URL,
             params={"api_key": RUNPOD_API_KEY},
             json={"query": query},
-            timeout=TIMEOUT,
         )
-        resp.raise_for_status()
         data = resp.json()
     except Exception as e:
-        print(f"[GPU][RunPod] 조회 실패: {e}")
+        print(f"[GPU][RunPod] 조회 최종 실패: {e}")
         return []
 
     gpu_types = data.get("data", {}).get("gpuTypes", [])

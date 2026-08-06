@@ -13,18 +13,31 @@ from config import SEC_USER_AGENT, HYPERSCALER_CIKS, XBRL_TAGS
 
 FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
 HEADERS = {"User-Agent": SEC_USER_AGENT}
-TIMEOUT = 20
+
+# (connect_timeout, read_timeout) 튜플로 분리.
+# 단일 timeout 값은 "연결"에만 적용되고, 연결 이후 서버가 응답을
+# 질질 끄는 경우(hang)에는 무한정 대기할 수 있어 read timeout을 명시한다.
+CONNECT_TIMEOUT = 5
+READ_TIMEOUT = 15
+TIMEOUT = (CONNECT_TIMEOUT, READ_TIMEOUT)
+
+MAX_RETRIES = 2
 
 
 def fetch_company_facts(cik: str):
     url = FACTS_URL.format(cik=cik)
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
-        resp.raise_for_status()
-        return resp.json()
-    except Exception as e:
-        print(f"[HYPERSCALER] CIK {cik} 조회 실패: {e}")
-        return None
+    last_exc = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            last_exc = e
+            print(f"[HYPERSCALER] CIK {cik} 조회 실패 (시도 {attempt}/{MAX_RETRIES}): {e}")
+            time.sleep(1)
+    print(f"[HYPERSCALER] CIK {cik} 최종 실패: {last_exc}")
+    return None
 
 
 def _extract_quarterly_values(facts, tag_candidates):

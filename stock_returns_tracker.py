@@ -15,7 +15,15 @@ from config import STOCK_UNIVERSE, RETURN_WINDOWS
 
 CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-TIMEOUT = 15
+
+# (connect_timeout, read_timeout) 튜플로 분리.
+# 단일 timeout 값은 "연결"에만 적용되고, 연결 이후 서버가 응답을
+# 질질 끄는 경우(hang)에는 무한정 대기할 수 있어 read timeout을 명시한다.
+CONNECT_TIMEOUT = 5
+READ_TIMEOUT = 12
+TIMEOUT = (CONNECT_TIMEOUT, READ_TIMEOUT)
+
+MAX_RETRIES = 2
 
 
 def fetch_daily_closes(ticker: str, range_="2y"):
@@ -26,12 +34,21 @@ def fetch_daily_closes(ticker: str, range_="2y"):
     params = {"range": range_, "interval": "1d"}
     url = CHART_URL.format(ticker=ticker)
 
-    try:
-        resp = requests.get(url, headers=HEADERS, params=params, timeout=TIMEOUT)
-        resp.raise_for_status()
-        data = resp.json()
-    except Exception as e:
-        print(f"[STOCK] {ticker} 조회 실패: {e}")
+    data = None
+    last_exc = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            resp = requests.get(url, headers=HEADERS, params=params, timeout=TIMEOUT)
+            resp.raise_for_status()
+            data = resp.json()
+            break
+        except Exception as e:
+            last_exc = e
+            print(f"[STOCK] {ticker} 조회 실패 (시도 {attempt}/{MAX_RETRIES}): {e}")
+            time.sleep(1)
+
+    if data is None:
+        print(f"[STOCK] {ticker} 최종 실패: {last_exc}")
         return []
 
     try:
