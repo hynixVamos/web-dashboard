@@ -103,24 +103,25 @@ def hyperscaler_page():
     cache = ctx.pop("_cache")
     hyper_rows = cache["hyperscaler"]
 
-    # 분기(period_end)별로 5개 하이퍼스케일러 Capex 합산 -> 시계열 막대그래프용
-    capex_by_quarter = {}
+    # 연도별로 5개 하이퍼스케일러 Capex 합산 (같은 해의 모든 분기를 다 더함) -> 연간 추이 막대그래프용
+    capex_by_year = {}
     for row in hyper_rows:
         period = row.get("period_end")
         capex = row.get("capex_usd")
         if period is None or capex is None:
             continue
-        capex_by_quarter[period] = capex_by_quarter.get(period, 0) + capex
+        year = period[:4]  # "2026-06-30" -> "2026"
+        capex_by_year[year] = capex_by_year.get(year, 0) + capex
 
-    quarters_sorted = sorted(capex_by_quarter.keys())
-    capex_chart_labels = quarters_sorted
-    capex_chart_values_billion = [round(capex_by_quarter[q] / 1_000_000_000, 1) for q in quarters_sorted]
+    years_sorted = sorted(capex_by_year.keys())
+    capex_chart_labels = years_sorted
+    capex_chart_values = [round(capex_by_year[y] / 1_000_000_000, 1) for y in years_sorted]
 
     return render_template(
         "hyperscaler.html",
         hyperscaler=hyper_rows,
         capex_chart_labels=capex_chart_labels,
-        capex_chart_values=capex_chart_values_billion,
+        capex_chart_values=capex_chart_values,
         **ctx,
     )
 
