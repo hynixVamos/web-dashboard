@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}GPU 렌탈가 · AI 인프라 트래킹{% endblock %}
+{% block content %}
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>GPU 렌탈가 (Vast.ai)</h2>
+    <span class="panel-sub">$/GPU-hr</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="align-left">모델</th>
+          <th>최저가</th>
+          <th>25th pct</th>
+          <th>샘플수</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in gpu_vast %}
+        <tr>
+          <td class="align-left">{{ row.gpu_model }}</td>
+          <td class="mono num">{% if row.min_price_usd_hr is not none %}${{ "%.4f"|format(row.min_price_usd_hr) }}{% else %}—{% endif %}</td>
+          <td class="mono num">{% if row.p25_price_usd_hr is not none %}${{ "%.4f"|format(row.p25_price_usd_hr) }}{% else %}—{% endif %}</td>
+          <td class="mono num dim">{{ row.sample_count }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="empty">Vast.ai 데이터 없음 (API 키 미설정 또는 조회 실패)</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if gpu_runpod %}
+<section class="panel">
+  <div class="panel-head">
+    <h2>GPU 렌탈가 (RunPod)</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="align-left">모델</th>
+          <th>온디맨드</th>
+          <th>스팟</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in gpu_runpod %}
+        <tr>
+          <td class="align-left">{{ row.gpu_model }}</td>
+          <td class="mono num">{% if row.on_demand_usd_hr %}${{ "%.4f"|format(row.on_demand_usd_hr) }}{% else %}—{% endif %}</td>
+          <td class="mono num">{% if row.spot_usd_hr %}${{ "%.4f"|format(row.spot_usd_hr) }}{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% endblock %}

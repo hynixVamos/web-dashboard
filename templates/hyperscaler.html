@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}하이퍼스케일러 · AI 인프라 트래킹{% endblock %}
+{% block content %}
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>하이퍼스케일러 Capex / OCF / FCF</h2>
+    <span class="panel-sub">SEC EDGAR XBRL &middot; 최근 8개 분기 (10-Q)</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="align-left">기업</th>
+          <th class="align-left">분기 종료일</th>
+          <th>Capex</th>
+          <th>OCF</th>
+          <th>FCF</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in hyperscaler %}
+        <tr>
+          <td class="align-left">{{ row.company }}</td>
+          <td class="align-left mono dim">{{ row.period_end }}</td>
+          <td class="mono num">{% if row.capex_usd %}${{ "{:,.0f}".format(row.capex_usd / 1000000) }}M{% else %}—{% endif %}</td>
+          <td class="mono num">{% if row.ocf_usd %}${{ "{:,.0f}".format(row.ocf_usd / 1000000) }}M{% else %}—{% endif %}</td>
+          <td class="mono num {% if row.fcf_usd is not none %}{{ 'pos' if row.fcf_usd > 0 else 'neg' }}{% endif %}">
+            {% if row.fcf_usd is not none %}${{ "{:,.0f}".format(row.fcf_usd / 1000000) }}M{% else %}—{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="empty">데이터 없음</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% endblock %}

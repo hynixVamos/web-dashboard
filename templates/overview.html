@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}개요 · AI 인프라 트래킹{% endblock %}
+{% block content %}
+
+<div class="chip-row">
+  {% for row in stocks %}
+    {% if row.get('1D') is not none %}
+    <span class="chip">
+      {{ row.name }}
+      <b class="{{ 'pos' if row['1D'] > 0 else ('neg' if row['1D'] < 0 else '') }}">
+        {{ "%+.1f"|format(row['1D']) }}%
+      </b>
+    </span>
+    {% endif %}
+  {% endfor %}
+</div>
+
+<section class="kpi-grid">
+  <div class="kpi-card">
+    <span class="kpi-label">트래킹 GPU 모델</span>
+    <span class="kpi-value">{{ gpu_model_count }}</span>
+    <span class="kpi-note">Vast.ai 기준 &middot; 매물 있는 모델</span>
+  </div>
+  <div class="kpi-card">
+    <span class="kpi-label">최저가 GPU</span>
+    <span class="kpi-value">{% if cheapest_gpu %}${{ "%.3f"|format(cheapest_gpu.min_price_usd_hr) }}{% else %}—{% endif %}</span>
+    <span class="kpi-note">{% if cheapest_gpu %}{{ cheapest_gpu.gpu_model }} / hr{% else %}데이터 없음{% endif %}</span>
+  </div>
+  <div class="kpi-card">
+    <span class="kpi-label">트래킹 종목</span>
+    <span class="kpi-value">{{ stock_count }}</span>
+    <span class="kpi-note">평균 YTD {{ "%+.1f"|format(avg_ytd) if avg_ytd is not none else "—" }}%</span>
+  </div>
+  <div class="kpi-card">
+    <span class="kpi-label">하이퍼스케일러 평균 FCF</span>
+    <span class="kpi-value">{% if avg_fcf is not none %}${{ "{:,.0f}".format(avg_fcf / 1000000000) }}B{% else %}—{% endif %}</span>
+    <span class="kpi-note">최신 분기 기준</span>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>바로가기</h2>
+  </div>
+  <div class="link-grid">
+    <a class="link-card" href="{{ url_for('gpu_page') }}">
+      <span class="link-title">GPU 렌탈가 →</span>
+      <span class="link-desc">Vast.ai / RunPod 전체 모델 가격표</span>
+    </a>
+    <a class="link-card" href="{{ url_for('stocks_page') }}">
+      <span class="link-title">주가수익률 →</span>
+      <span class="link-desc">YTD / 3M / 1M / 1W / 1D 전체 종목</span>
+    </a>
+    <a class="link-card" href="{{ url_for('hyperscaler_page') }}">
+      <span class="link-title">하이퍼스케일러 →</span>
+      <span class="link-desc">Capex / OCF / FCF 분기별 추이</span>
+    </a>
+  </div>
+</section>
+
+{% endblock %}
