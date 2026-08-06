@@ -13,6 +13,14 @@
     </span>
     {% endif %}
   {% endfor %}
+  {% if adr and adr.premium_pct is not none %}
+  <span class="chip">
+    SK하이닉스 ADR 괴리율
+    <b class="{{ 'pos' if adr.premium_pct > 0 else ('neg' if adr.premium_pct < 0 else '') }}">
+      {{ "%+.1f"|format(adr.premium_pct) }}%
+    </b>
+  </span>
+  {% endif %}
 </div>
 
 <section class="kpi-grid">
@@ -45,7 +53,7 @@
   <div class="link-grid">
     <a class="link-card" href="{{ url_for('gpu_page') }}">
       <span class="link-title">GPU 렌탈가 →</span>
-      <span class="link-desc">Vast.ai / RunPod 전체 모델 가격표</span>
+      <span class="link-desc">Vast.ai / RunPod 전체 모델 가격표 &middot; 전일대비</span>
     </a>
     <a class="link-card" href="{{ url_for('stocks_page') }}">
       <span class="link-title">주가수익률 →</span>
@@ -54,6 +62,10 @@
     <a class="link-card" href="{{ url_for('hyperscaler_page') }}">
       <span class="link-title">하이퍼스케일러 →</span>
       <span class="link-desc">Capex / OCF / FCF 분기별 추이</span>
+    </a>
+    <a class="link-card" href="{{ url_for('adr_page') }}">
+      <span class="link-title">SK하이닉스 ADR →</span>
+      <span class="link-desc">SKHY vs 000660 괴리율</span>
     </a>
   </div>
 </section>

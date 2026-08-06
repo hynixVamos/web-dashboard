@@ -13,7 +13,7 @@
 <header class="topbar">
   <div class="topbar-left">
     <h1>AI 인프라 트래킹</h1>
-    <p class="subtitle">GPU 렌탈가 &middot; 주가수익률 &middot; 하이퍼스케일러 Capex</p>
+    <p class="subtitle">GPU 렌탈가 &middot; 주가수익률 &middot; 하이퍼스케일러 Capex &middot; SK하이닉스 ADR</p>
   </div>
   <div class="topbar-right">
     <span class="live-dot" title="30분마다 자동 갱신"></span>
@@ -26,6 +26,7 @@
   <a href="{{ url_for('gpu_page') }}" class="tab {{ 'active' if active_tab=='gpu' else '' }}">GPU 렌탈가</a>
   <a href="{{ url_for('stocks_page') }}" class="tab {{ 'active' if active_tab=='stocks' else '' }}">주가수익률</a>
   <a href="{{ url_for('hyperscaler_page') }}" class="tab {{ 'active' if active_tab=='hyperscaler' else '' }}">하이퍼스케일러</a>
+  <a href="{{ url_for('adr_page') }}" class="tab {{ 'active' if active_tab=='adr' else '' }}">ADR</a>
 </nav>
 
 {% if last_error %}
@@ -37,7 +38,7 @@
 </main>
 
 <footer>
-  <span>개인 리서치용 &middot; 자동 갱신 30분 주기 &middot; <a href="/api/gpu">GPU JSON</a> &middot; <a href="/api/stocks">주가 JSON</a> &middot; <a href="/api/hyperscaler">Capex JSON</a></span>
+  <span>개인 리서치용 &middot; 자동 갱신 30분 주기 &middot; <a href="/api/gpu">GPU JSON</a> &middot; <a href="/api/stocks">주가 JSON</a> &middot; <a href="/api/hyperscaler">Capex JSON</a> &middot; <a href="/api/adr">ADR JSON</a></span>
 </footer>
 
 </body>

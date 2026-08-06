@@ -5,8 +5,9 @@ AI 인프라 트래킹 대시보드 (탭 기반 다중 페이지)
 - /gpu         GPU 렌탈가 전체 표
 - /stocks      주가수익률 전체 표
 - /hyperscaler 하이퍼스케일러 Capex/OCF/FCF 전체 표
+- /adr         SK하이닉스 ADR-본주 괴리율
 
-이 파일은 캐시(cache_refresh.CACHE)만 읽는다. 외부 API는 절대 여기서 호출하지 않는다.
+이 파일은 캐시(cache_refresh.get_cache())만 읽는다. 외부 API는 절대 여기서 호출하지 않는다.
 """
 
 import os
@@ -15,11 +16,6 @@ from flask import Flask, render_template, jsonify
 import cache_refresh
 
 app = Flask(__name__)
-
-# waitress/gunicorn처럼 `app.py`를 모듈로 import해서 실행하는 WSGI 서버를 쓸 때도
-# 백그라운드 캐시 스레드가 시작되도록 모듈 로드 시점에 바로 호출한다.
-# (start_background_refresh 내부에 중복 시작 방지 가드가 있어 여러 번 호출돼도 안전함)
-cache_refresh.start_background_refresh()
 
 
 def _format_updated(iso_str):
@@ -60,7 +56,6 @@ def overview():
     avg_ytd = sum(ytd_values) / len(ytd_values) if ytd_values else None
 
     hyper_rows = cache["hyperscaler"]
-    # 회사별 가장 최근 분기의 FCF만 모아서 평균
     latest_fcf_by_company = {}
     for row in hyper_rows:
         company = row["company"]
@@ -71,6 +66,8 @@ def overview():
     fcf_values = [v[1] for v in latest_fcf_by_company.values()]
     avg_fcf = sum(fcf_values) / len(fcf_values) if fcf_values else None
 
+    adr = cache.get("adr") or {}
+
     return render_template(
         "overview.html",
         stocks=stocks,
@@ -79,6 +76,7 @@ def overview():
         stock_count=stock_count,
         avg_ytd=avg_ytd,
         avg_fcf=avg_fcf,
+        adr=adr,
         **ctx,
     )
 
@@ -106,6 +104,13 @@ def hyperscaler_page():
     return render_template("hyperscaler.html", hyperscaler=cache["hyperscaler"], **ctx)
 
 
+@app.route("/adr")
+def adr_page():
+    ctx = _common_context("adr")
+    cache = ctx.pop("_cache")
+    return render_template("adr.html", adr=cache.get("adr") or {}, **ctx)
+
+
 @app.route("/api/gpu")
 def api_gpu():
     return jsonify(cache_refresh.get_cache()["gpu"])
@@ -121,6 +126,11 @@ def api_hyperscaler():
     return jsonify(cache_refresh.get_cache()["hyperscaler"])
 
 
+@app.route("/api/adr")
+def api_adr():
+    return jsonify(cache_refresh.get_cache().get("adr") or {})
+
+
 @app.route("/health")
 def health():
     cache = cache_refresh.get_cache()
@@ -128,22 +138,15 @@ def health():
         "status": "ok",
         "last_updated": cache["last_updated"],
         "last_error": cache["last_error"],
-        "refreshing": cache.get("refreshing", False),
     })
 
 
 @app.route("/diag")
 def diag():
-    import os
-    return jsonify({
-        **cache_refresh.diag_info(),
-        "flask_pid": os.getpid(),
-        "cache_refresh_module_id": id(cache_refresh),
-    })
+    return jsonify(cache_refresh.diag_info())
 
 
 if __name__ == "__main__":
-    # Windows에서 0.0.0.0 바인딩 시 Werkzeug 개발서버가 소켓 오류를 내는 경우가 있어
-    # 로컬 테스트는 127.0.0.1로 바인딩한다. (배포 시 gunicorn은 이 블록을 안 타므로 무관)
+    cache_refresh.start_background_refresh()
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="127.0.0.1", port=port, debug=False, threaded=True)
+    app.run(host="0.0.0.0", port=port, debug=False)

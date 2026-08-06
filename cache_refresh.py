@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-백그라운드에서 주기적으로 3개 트래커를 실행해 캐시를 갱신.
+백그라운드에서 주기적으로 4개 트래커를 실행해 캐시를 갱신.
 Flask 라우트는 절대 트래커를 직접 호출하지 않고 이 모듈의 get_cache()만 읽는다.
 
 2026-08-06 수정 이력:
@@ -9,13 +9,12 @@ Flask 라우트는 절대 트래커를 직접 호출하지 않고 이 모듈의 
 3차: 워치독 제거, 재시도 축소, print flush=True
 4차: IPv4 강제 패치, 소켓 전역 타임아웃 추가
 5차: 메모리 캐시 대신 디스크 파일(JSON) 기반 캐시로 전면 재구성
-6차(현재): GPU 렌탈가에 "전일대비(1D)" 등락률 추가.
-    별도 DB/디스크 없이, 이미 쓰고 있는 캐시 파일 안에 "오늘 스냅샷"과
-    "어제 스냅샷" 두 개만 같이 저장해두는 방식. KST 기준 날짜가 바뀌는
-    순간 그날의 마지막 스냅샷을 "어제 값"으로 넘기고, 그 값 대비 등락률을
-    계산해 각 GPU 행에 change_1d_pct로 붙여준다.
-    한계: 이 캐시 파일은 컨테이너가 재시작(재배포)되면 초기화되므로,
-    재배포 당일 하루는 전일대비가 표시되지 않는다(다음날부터 정상 복구).
+6차: GPU 렌탈가에 "전일대비(1D)" 등락률 추가 (캐시 파일 안에 오늘/어제
+    스냅샷만 같이 저장해두는 방식, 별도 DB 없음)
+7차(현재): SK하이닉스 ADR-본주 괴리율 트래커 통합.
+    기존 skhynix-adr.onrender.com 전용 앱(30초 실시간 갱신)을 별도로
+    두지 않고, 이 대시보드의 30분 주기 트래커 목록에 4번째로 추가하는
+    방식으로 통합 (구조 단순화 우선, 실시간성보다 유지보수 편의 선택).
 """
 
 import json
@@ -41,6 +40,7 @@ except Exception as _e:
 import gpu_rental_tracker
 import stock_returns_tracker
 import hyperscaler_tracker
+import adr_tracker
 
 socket.setdefaulttimeout(20)
 
@@ -56,14 +56,10 @@ _DEFAULT_CACHE = {
     "gpu": [],
     "stocks": [],
     "hyperscaler": [],
+    "adr": {},  # SK하이닉스 ADR-본주 괴리율 (단일 스냅샷)
     "last_updated": None,
     "last_error": None,
     "refreshing": False,
-    # gpu_daily: 전일대비 계산용 스냅샷 저장소
-    #   date       : "today" 스냅샷이 찍힌 KST 날짜 (YYYY-MM-DD)
-    #   prices     : {gpu_model: min_price_usd_hr} - 오늘 안에서는 갱신될 때마다 최신값으로 덮어씀
-    #   prev_date  : 그 전날 날짜
-    #   prev_prices: {gpu_model: min_price_usd_hr} - 전날의 "마지막" 스냅샷 (= 전일 종가 개념)
     "gpu_daily": {"date": None, "prices": {}, "prev_date": None, "prev_prices": {}},
 }
 
@@ -93,9 +89,11 @@ def _read_cache_file():
             data = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return dict(_DEFAULT_CACHE)
-    # 예전 캐시 파일(gpu_daily 없는 버전)과 호환
+    # 예전 캐시 파일(필드 없는 버전)과 호환
     if "gpu_daily" not in data:
         data["gpu_daily"] = dict(_DEFAULT_CACHE["gpu_daily"])
+    if "adr" not in data:
+        data["adr"] = {}
     return data
 
 
@@ -105,7 +103,6 @@ def _apply_gpu_daily_change(gpu_rows, prev_full_cache):
     daily = dict(prev_full_cache.get("gpu_daily") or _DEFAULT_CACHE["gpu_daily"])
     today_str = datetime.now(KST).strftime("%Y-%m-%d")
 
-    # 날짜가 바뀌었으면: 지금까지의 "오늘" 스냅샷을 "어제" 자리로 넘긴다.
     if daily.get("date") != today_str:
         if daily.get("date") is not None:
             daily["prev_date"] = daily.get("date")
@@ -123,12 +120,12 @@ def _apply_gpu_daily_change(gpu_rows, prev_full_cache):
         price = row.get("min_price_usd_hr")
 
         if price is not None and model:
-            today_prices[model] = price  # 오늘자 최신값으로 계속 덮어씀
+            today_prices[model] = price
 
         change_pct = None
         if model and price is not None:
             prev_price = prev_prices.get(model)
-            if prev_price:  # 0이나 None이 아닐 때만
+            if prev_price:
                 change_pct = (price - prev_price) / prev_price * 100.0
         row["change_1d_pct"] = change_pct
         updated_rows.append(row)
@@ -147,6 +144,7 @@ def _refresh_once():
     gpu_rows = []
     stock_rows = []
     hyper_rows = []
+    adr_result = None
     error_msgs = []
 
     try:
@@ -168,18 +166,32 @@ def _refresh_once():
         error_msgs.append(f"Hyperscaler: {e}")
         _log(f"[CACHE] Hyperscaler 트래커 예외: {e}")
 
+    try:
+        adr_result = adr_tracker.run()
+        if adr_result.get("error"):
+            error_msgs.append(f"ADR: {adr_result['error']}")
+    except Exception as e:
+        error_msgs.append(f"ADR: {e}")
+        _log(f"[CACHE] ADR 트래커 예외: {e}")
+
     prev = _read_cache_file()
     final_gpu_rows = gpu_rows if gpu_rows else prev.get("gpu", [])
 
-    # GPU 행이 있을 때만 전일대비 계산 (완전 실패 시 기존 값 그대로 둠, change_1d_pct도 그대로 유지됨)
     gpu_daily = prev.get("gpu_daily")
     if gpu_rows:
         final_gpu_rows, gpu_daily = _apply_gpu_daily_change(gpu_rows, prev)
+
+    # ADR: 이번에 실패(adr_price is None)했으면 직전 성공 스냅샷을 유지
+    if adr_result and adr_result.get("adr_price") is not None:
+        final_adr = adr_result
+    else:
+        final_adr = prev.get("adr", {})
 
     new_data = {
         "gpu": final_gpu_rows,
         "stocks": stock_rows if stock_rows else prev.get("stocks", []),
         "hyperscaler": hyper_rows if hyper_rows else prev.get("hyperscaler", []),
+        "adr": final_adr,
         "last_updated": datetime.now(timezone.utc).isoformat(),
         "last_error": "; ".join(error_msgs) if error_msgs else None,
         "refreshing": False,
@@ -190,10 +202,12 @@ def _refresh_once():
     verify = _read_cache_file()
     elapsed = round(time.time() - t0, 1)
     _log(f"[CACHE] 갱신 완료 ({elapsed}초 소요): gpu={len(gpu_rows)} stocks={len(stock_rows)} "
-         f"hyperscaler={len(hyper_rows)} errors={new_data['last_error']}")
+         f"hyperscaler={len(hyper_rows)} adr_premium={final_adr.get('premium_pct')} "
+         f"errors={new_data['last_error']}")
     _log(f"[CACHE][DIAG] 파일 재확인: gpu={len(verify.get('gpu', []))} "
          f"stocks={len(verify.get('stocks', []))} hyperscaler={len(verify.get('hyperscaler', []))} "
-         f"last_updated={verify.get('last_updated')} gpu_daily_date={verify.get('gpu_daily', {}).get('date')}")
+         f"last_updated={verify.get('last_updated')} gpu_daily_date={verify.get('gpu_daily', {}).get('date')} "
+         f"adr_premium={verify.get('adr', {}).get('premium_pct')}")
 
 
 def _refresh_loop():
@@ -240,6 +254,7 @@ def diag_info():
         "gpu_len_now": len(data.get("gpu", [])),
         "stocks_len_now": len(data.get("stocks", [])),
         "hyperscaler_len_now": len(data.get("hyperscaler", [])),
+        "adr_now": data.get("adr"),
         "last_updated_now": data.get("last_updated"),
         "refreshing_now": data.get("refreshing"),
         "gpu_daily": data.get("gpu_daily"),
