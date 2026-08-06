@@ -132,6 +132,16 @@ def health():
     })
 
 
+@app.route("/diag")
+def diag():
+    import os
+    return jsonify({
+        **cache_refresh.diag_info(),
+        "flask_pid": os.getpid(),
+        "cache_refresh_module_id": id(cache_refresh),
+    })
+
+
 if __name__ == "__main__":
     # Windows에서 0.0.0.0 바인딩 시 Werkzeug 개발서버가 소켓 오류를 내는 경우가 있어
     # 로컬 테스트는 127.0.0.1로 바인딩한다. (배포 시 gunicorn은 이 블록을 안 타므로 무관)

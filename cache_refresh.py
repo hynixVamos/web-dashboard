@@ -71,6 +71,7 @@ def _refresh_once():
     """3개 트래커를 순서대로 실행해 CACHE를 갱신. 하나가 실패해도 나머지는 계속 진행."""
     with _lock:
         CACHE["refreshing"] = True
+    _log(f"[CACHE][DIAG] _refresh_once 시작, CACHE 객체 id={id(CACHE)}, 모듈 파일={__file__}")
 
     t0 = time.time()
     gpu_rows = []
@@ -140,4 +141,17 @@ def start_background_refresh():
 
 def get_cache():
     with _lock:
-        return dict(CACHE)
+        result = dict(CACHE)
+    return result
+
+
+def diag_info():
+    """진단용: 이 요청을 처리 중인 프로세스에서 CACHE 객체의 정체성을 확인."""
+    import os
+    with _lock:
+        return {
+            "cache_object_id": id(CACHE),
+            "module_file": __file__,
+            "pid": os.getpid(),
+            "started_flag": _started,
+        }
