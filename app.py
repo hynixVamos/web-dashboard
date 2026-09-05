@@ -11,7 +11,9 @@ AI 인프라 트래킹 대시보드 (탭 기반 다중 페이지)
 """
 
 import os
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
+from datetime import date, datetime
+from new_highs_data import read_report, KST
 
 import cache_refresh
 
@@ -151,6 +153,37 @@ def api_hyperscaler():
 @app.route("/api/adr")
 def api_adr():
     return jsonify(cache_refresh.get_cache().get("adr") or {})
+
+
+def _highs_report():
+    selected = request.args.get("date")
+    if selected is not None:
+        try:
+            if date.fromisoformat(selected).isoformat() != selected or selected > datetime.now(KST).date().isoformat():
+                raise ValueError
+        except ValueError:
+            raise ValueError("미래 날짜는 조회할 수 없으며 YYYY-MM-DD 형식이어야 합니다.")
+    provider = app.config.get("NEW_HIGHS_PROVIDER", read_report)
+    return provider(selected)
+
+
+@app.route("/new-highs")
+def new_highs_page():
+    try:
+        report = _highs_report()
+    except ValueError as error:
+        return str(error), 400
+    ctx = _common_context("new_highs")
+    ctx.pop("_cache")
+    return render_template("new_highs.html", report=report, **ctx)
+
+
+@app.route("/api/new-highs")
+def api_new_highs():
+    try:
+        return jsonify(_highs_report())
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
 
 
 @app.route("/health")
