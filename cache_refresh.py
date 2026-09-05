@@ -238,6 +238,9 @@ def start_background_refresh():
 
     _log(f"[CACHE] 백그라운드 갱신 스레드 시작 준비 (캐시 파일: {CACHE_FILE_PATH})")
     threading.Thread(target=_refresh_loop, daemon=True).start()
+    # Independent long-running scan: preserve existing trackers and their refresh cadence.
+    import new_highs_tracker
+    new_highs_tracker.start_background_refresh()
 
 
 def get_cache():
