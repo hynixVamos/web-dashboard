@@ -7,8 +7,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{% block head %}{% endblock %}
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
 
 <header class="topbar">
   <div class="topbar-left">
@@ -27,6 +28,7 @@
   <a href="{{ url_for('stocks_page') }}" class="tab {{ 'active' if active_tab=='stocks' else '' }}">주가수익률</a>
   <a href="{{ url_for('hyperscaler_page') }}" class="tab {{ 'active' if active_tab=='hyperscaler' else '' }}">하이퍼스케일러</a>
   <a href="{{ url_for('adr_page') }}" class="tab {{ 'active' if active_tab=='adr' else '' }}">ADR</a>
+  <a href="{{ url_for('new_highs_page') }}" class="tab {{ 'active' if active_tab=='new_highs' else '' }}">신고가 리포트</a>
 </nav>
 
 {% if last_error %}
