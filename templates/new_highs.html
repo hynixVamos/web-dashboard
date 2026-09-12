@@ -45,14 +45,14 @@
 <dialog id="stock-detail" aria-labelledby="detail-title">
   <div class="nh-detail-head"><h2 id="detail-title"></h2><button id="close-detail" aria-label="상세 닫기">✕</button></div>
   <p id="detail-subtitle" class="dim"></p><dl id="detail-values"></dl>
-  <h3>이 날짜의 이유 / 메모</h3><p id="detail-memo"></p>
+  <h3>현재 신고가 이유 / 메모</h3><p id="detail-memo"></p>
   <form id="note-form" class="nh-note-form">
     <label for="note-sector">섹터</label>
     <input id="note-sector" name="sector" list="saved-sectors" maxlength="100" placeholder="예: 반도체, 전력기기" autocomplete="off">
     <datalist id="saved-sectors"></datalist>
     <label for="note-reason">신고가 이유</label>
-    <textarea id="note-reason" name="reason" rows="4" maxlength="5000" placeholder="이 날짜에 신고가를 기록한 이유를 입력하세요"></textarea>
-    <p class="dim">섹터는 다른 날짜에도 적용됩니다. 이유는 선택한 날짜에 추가되며, 이전 기록은 아래에 누적됩니다.</p>
+    <textarea id="note-reason" name="reason" rows="4" maxlength="5000" placeholder="새로 저장할 신고가 이유를 입력하세요"></textarea>
+    <p class="dim">섹터와 신고가 이유는 같은 종목의 모든 날짜에 가장 최근 입력값이 적용됩니다. 빈칸은 기존 값을 유지하며, 이전 입력 내용은 아래에 누적됩니다.</p>
     <button id="save-note" type="submit">기록 저장</button>
     <p id="note-status" role="status" aria-live="polite"></p>
   </form>
