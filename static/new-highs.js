@@ -3,6 +3,7 @@
   const $=id=>document.getElementById(id),model=window.HighReportModel;
   let report=model.normalize(JSON.parse($('initial-report').textContent)),requestId=0,pending=false,failed=false,followLatest=true;
   let visible=[];
+  let editing=null,saving=false,historyRequest=0,saveAttempt=null;
   const defaults={scope:'all',period:'20d',sector:'',newOnly:false,memoOnly:false,minCap:0,minValue:0,search:'',sort:'market_cap',direction:-1};
   let state={...defaults};
   const number=n=>new Intl.NumberFormat('ko-KR',{maximumFractionDigits:3}).format(n);
@@ -53,7 +54,7 @@
       for(const key of ['market_cap','trading_value','turnover_pct'])tr.append(el('td',number(r[key]),'num'));
       const period=el('td');period.append(el('span',label(model.representative(r)),'nh-badge'));period.title=r.periods.map(label).join(' / ');tr.append(period);
       tr.append(el('td',r.streak_days>1?`연속 ${r.streak_days}일`:'1일'),el('td',r.is_new?'N':'—',r.is_new?'nh-new':''));
-      const memo=el('td',r.memo||'—','align-left nh-memo');memo.title=r.memo;tr.append(memo);
+      const memo=el('td',r.memo||(r.note_count?`누적 기록 ${r.note_count}건`:'—'),'align-left nh-memo');memo.title=r.memo;tr.append(memo);
       tr.onclick=()=>detail(r);return tr;
     });
     if(!rows.length){const tr=el('tr');let text='조건에 맞는 종목이 없습니다. 필터를 조정해 주세요.';
@@ -64,10 +65,58 @@
     $('export-memo').disabled=!visible.some(r=>r.memo.trim());nav();
   }
   function detail(r){
+    editing={ticker:r.ticker,date:report.date};saveAttempt=null;
+    $('note-sector').value=r.manual_sector||'';$('note-reason').value='';$('note-status').textContent=report.notes_available===false?'현재 기록 저장소에 연결되지 않았습니다. 저장소 연결 후 다시 시도해 주세요.':'';
+    $('note-sector').placeholder=`직접 입력 (기본 업종: ${r.source_sector||r.sector})`;
+    $('saved-sectors').replaceChildren(...(report.saved_sectors||[]).map(s=>new Option(s,s)));
     $('detail-title').textContent=r.name;$('detail-subtitle').textContent=`${r.ticker} · ${r.sector} · ${report.date}`;
     const values=[['종가',`${number(r.close)}원`],['등락률',`${r.change_pct>0?'+':''}${r.change_pct}%`],['시가총액',`${number(r.market_cap)}억 원`],['거래대금',`${number(r.trading_value)}억 원`],['회전율',`${number(r.turnover_pct)}%`],['신고가 기준',r.periods.map(label).join(' / ')],['연속 신고',`${r.streak_days}일`],['신규 기준',r.new_periods.map(label).join(' / ')||'없음'],['가격 이력 시작',r.history_start],['역사적 판정',r.all_time_verified?'상장일부터 이력 확인':'전체 이력 부족 · 판정 제외']];
     $('detail-values').replaceChildren(...values.flatMap(([k,v])=>[el('dt',k),el('dd',v)]));$('detail-memo').textContent=r.memo||'기재된 이유 / 메모가 없습니다.';$('stock-detail').showModal();
+    loadHistory();
   }
+  async function loadHistory(){
+    const current=editing,id=++historyRequest;
+    $('note-history').textContent='기록을 불러오는 중…';
+    try{
+      const response=await fetch(`/api/new-highs/${encodeURIComponent(current.ticker)}/notes`,{cache:'no-store',signal:AbortSignal.timeout(15000)});
+      if(!response.ok)throw new Error('history');
+      const data=await response.json();if(id!==historyRequest||editing!==current)return;
+      $('note-history').replaceChildren(...data.notes.map(note=>{
+        const item=el('article',undefined,'nh-note-entry');
+        item.append(el('strong',`${note.report_date} · ${note.sector||'섹터 변경 없음'}`));
+        if(note.reason)item.append(el('p',note.reason));
+        item.append(el('small',`저장 ${note.created_at.slice(0,19).replace('T',' ')} KST`));return item;
+      }));
+      if(!data.notes.length)$('note-history').textContent='아직 저장한 기록이 없습니다.';
+    }catch(error){if(id===historyRequest&&editing===current)$('note-history').textContent='기록을 불러오지 못했습니다. 기록 새로고침으로 다시 시도해 주세요.';}
+  }
+  $('note-form').onsubmit=async event=>{
+    event.preventDefault();if(saving||!editing)return;
+    const sector=$('note-sector').value.trim(),reason=$('note-reason').value.trim();
+    if(!sector&&!reason){$('note-status').textContent='섹터 또는 신고가 이유를 입력해 주세요.';return;}
+    const current=editing,payload={date:current.date,sector,reason},signature=JSON.stringify([current.ticker,payload]);
+    if(!saveAttempt||saveAttempt.signature!==signature)saveAttempt={signature,id:crypto.randomUUID()};
+    payload.request_id=saveAttempt.id;saving=true;
+    for(const id of ['save-note','note-sector','note-reason','close-detail'])$(id).disabled=true;
+    $('note-status').textContent='저장 중…';
+    try{
+      const response=await fetch(`/api/new-highs/${encodeURIComponent(current.ticker)}/notes`,{
+        method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(15000)
+      });
+      const data=await response.json();if(!response.ok)throw new Error(data.error||'저장하지 못했습니다. 다시 시도해 주세요.');
+      $('note-reason').value='';saveAttempt=null;
+      $('note-status').textContent='저장했습니다. 이전 기록도 유지됩니다.';
+      await Promise.all([loadHistory(),loadDate(report.date,true)]);
+      const updated=report.rows.find(r=>r.ticker===current.ticker);
+      if(updated&&report.date===current.date){
+        $('detail-memo').textContent=updated.memo||'기재된 이유 / 메모가 없습니다.';
+        $('detail-subtitle').textContent=`${updated.ticker} · ${updated.sector} · ${current.date}`;
+      }
+    }catch(error){$('note-status').textContent=error.name==='TimeoutError'?'저장 결과를 확인하지 못했습니다. 다시 저장해도 같은 요청은 중복되지 않습니다.':error.message||'저장하지 못했습니다. 다시 시도해 주세요.';}
+    finally{saving=false;for(const id of ['save-note','note-sector','note-reason','close-detail'])$(id).disabled=false;}
+  };
+  $('reload-notes').onclick=()=>loadHistory();
+  $('stock-detail').addEventListener('cancel',event=>{if(saving)event.preventDefault();});
   async function loadDate(date,background=false){
     if(date&&date>report.today){$('result-status').textContent='미래 날짜는 선택할 수 없습니다.';$('report-date').value=report.date;return;}
     const id=++requestId;pending=true;failed=false;$('retry').hidden=true;

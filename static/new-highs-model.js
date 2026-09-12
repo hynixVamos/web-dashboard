@@ -7,7 +7,7 @@
       const satisfied=periods.map(p=>p[0]).filter(p=>r['is_'+fields[p]]);
       return {...r,periods:satisfied,new_periods:satisfied.filter(p=>r['new_'+fields[p]]),
         market_cap:r.market_cap_eok,trading_value:r.trading_value_eok,turnover_pct:r.turnover*100,
-        memo:[r.reason,r.memo].filter(Boolean).join('\n'),
+        memo:[r.reason,r.memo,...(r.manual_reasons||[])].filter(Boolean).join('\n'),
         highlight:r.is_all_time_high?'strong':r.is_60d_high?'watch':null};
     })};
   }
