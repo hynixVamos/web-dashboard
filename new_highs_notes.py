@@ -99,7 +99,7 @@ def history(ticker):
 
 
 def annotate_report(report):
-    """Latest manual sector follows the ticker; reasons belong to the report date."""
+    """Latest nonempty manual sector and reason follow the ticker across all dates."""
     try:
         with connection() as db:
             notes = [dict(row) for row in db.execute('SELECT * FROM high_notes ORDER BY id')]
@@ -111,8 +111,8 @@ def annotate_report(report):
         counts[ticker] = counts.get(ticker, 0) + 1
         if note['sector']:
             sectors[ticker] = note['sector']
-        if note['report_date'] == report['date'] and note['reason']:
-            reasons.setdefault(ticker, []).append(note['reason'])
+        if note['reason']:
+            reasons[ticker] = [note['reason']]
     rows = []
     for row in report['rows']:
         ticker = row['ticker']
