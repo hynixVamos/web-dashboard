@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}신고가 리포트 · AI 인프라 트래킹{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='new-highs.css') }}">{% endblock %}
+{% block body_class %}new-highs-page{% endblock %}
+{% block content %}
+<section class="panel nh-report" aria-labelledby="report-title">
+  <div class="panel-head nh-heading">
+    <h2 id="report-title">신고가 리포트</h2>
+    <button id="prev-date" aria-label="이전 날짜">◀</button>
+    <label class="nh-date"><span class="nh-sr">조회 날짜</span><input id="report-date" type="date" value="{{ report.date }}" max="{{ report.today }}"></label>
+    <button id="next-date" aria-label="다음 날짜">▶</button>
+    <button id="latest-date">최신</button>
+    <span id="source-label" class="panel-sub"></span>
+  </div>
+  <p id="data-status" class="nh-data-status" role="status"></p>
+  <div id="period-tabs" class="nh-tabs" aria-label="신고가 기간"></div>
+  <p class="nh-legend"><span class="nh-badge watch">60일</span> <span class="nh-badge strong">역사적</span> 행 강조 · 고가 돌파 기준 · 금액: 억 원 · 회전율: 대금/시총(%) · 신규/연속: 선택 기간 기준(전체는 신규=어느 기간, 연속=대표 기간)</p>
+  <p class="nh-legend">역사적 신고가는 상장일부터 가격 이력이 확보된 종목만 판정합니다. 섹터는 직접 입력한 분류를 우선 표시하며, 미입력 종목은 KRX KIND 업종을 표시합니다.</p>
+  <div class="nh-filters">
+    <label>범위 <select id="scope"><option value="all-periods">전체</option><option value="20d">20일</option><option value="60d">60일</option><option value="52w">52주</option><option value="all">역사적</option></select></label>
+    <label><span class="nh-sr">업종 선택</span><select id="sector"><option value="">업종 전체</option></select></label>
+    <label><input id="new-only" type="checkbox"> 신규만 보기</label>
+    <label><input id="memo-only" type="checkbox"> 이유 기재만 보기</label>
+    <label>시총 <input id="min-cap" type="number" min="0" step="any" placeholder="최소 억" aria-label="최소 시가총액 (억 원)"></label>
+    <label>대금 <input id="min-value" type="number" min="0" step="any" placeholder="최소 억" aria-label="최소 거래대금 (억 원)"></label>
+    <input id="search" type="search" placeholder="종목명 / 코드 검색" aria-label="종목명 또는 코드 검색">
+    <button id="export-memo">▤ 메모 추출</button>
+    <button id="reset-filters">초기화</button>
+  </div>
+  <div id="sector-chips" class="chip-row" aria-label="업종별 필터"></div>
+  <div class="nh-status"><span id="result-status" role="status" aria-live="polite"></span><button id="retry" hidden>다시 시도</button><span>행을 선택하면 상세 정보 · N 신규</span></div>
+  <div class="table-wrap" tabindex="0" aria-label="신고가 종목 표, 가로 스크롤 가능">
+    <table id="highs-table">
+      <thead><tr>
+        <th class="align-left">섹터</th><th class="align-left">종목명</th>
+        <th aria-sort="none"><button data-sort="change_pct">등락률 <span>↕</span></button></th>
+        <th aria-sort="descending"><button data-sort="market_cap">시총(억) <span>↓</span></button></th>
+        <th aria-sort="none"><button data-sort="trading_value">거래대금(억) <span>↕</span></button></th>
+        <th aria-sort="none"><button data-sort="turnover_pct">회전율(%) <span>↕</span></button></th>
+        <th title="가장 강한 신고가 기준">후</th><th aria-sort="none"><button data-sort="streak_days">연속 <span>↕</span></button></th><th>신규</th><th class="align-left">이유 / 메모</th>
+      </tr></thead><tbody id="report-rows"></tbody>
+    </table>
+  </div>
+</section>
+<dialog id="stock-detail" aria-labelledby="detail-title">
+  <div class="nh-detail-head"><h2 id="detail-title"></h2><button id="close-detail" aria-label="상세 닫기">✕</button></div>
+  <p id="detail-subtitle" class="dim"></p><dl id="detail-values"></dl>
+  <h3>이 날짜의 이유 / 메모</h3><p id="detail-memo"></p>
+  <form id="note-form" class="nh-note-form">
+    <label for="note-sector">섹터</label>
+    <input id="note-sector" name="sector" list="saved-sectors" maxlength="100" placeholder="예: 반도체, 전력기기" autocomplete="off">
+    <datalist id="saved-sectors"></datalist>
+    <label for="note-reason">신고가 이유</label>
+    <textarea id="note-reason" name="reason" rows="4" maxlength="5000" placeholder="이 날짜에 신고가를 기록한 이유를 입력하세요"></textarea>
+    <p class="dim">섹터는 다른 날짜에도 적용됩니다. 이유는 선택한 날짜에 추가되며, 이전 기록은 아래에 누적됩니다.</p>
+    <button id="save-note" type="submit">기록 저장</button>
+    <p id="note-status" role="status" aria-live="polite"></p>
+  </form>
+  <h3>누적 입력 기록</h3>
+  <button id="reload-notes" type="button">기록 새로고침</button>
+  <div id="note-history" aria-live="polite"></div>
+</dialog>
+<script id="initial-report" type="application/json">{{ report | tojson }}</script>
+<script src="{{ url_for('static', filename='new-highs-model.js') }}" defer></script>
+<script src="{{ url_for('static', filename='new-highs.js') }}" defer></script>
+{% endblock %}

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}SK하이닉스 ADR · AI 인프라 트래킹{% endblock %}
+{% block content %}
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>SK하이닉스 ADR-본주 괴리율</h2>
+    <span class="panel-sub">SKHY (Nasdaq) vs 000660 (KRX) &middot; 1 ADR = 본주 1/10주</span>
+  </div>
+
+  {% if adr and adr.adr_price is not none %}
+  <div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 18px;">
+    <div class="kpi-card">
+      <span class="kpi-label">SKHY (ADR)</span>
+      <span class="kpi-value mono">${{ "%.2f"|format(adr.adr_price) }}</span>
+      <span class="kpi-note">전일종가 ${{ "%.2f"|format(adr.adr_prev_close) if adr.adr_prev_close is not none else "—" }}</span>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-label">000660 (본주)</span>
+      <span class="kpi-value mono">₩{{ "{:,.0f}".format(adr.krx_price) }}</span>
+      <span class="kpi-note">전일종가 ₩{{ "{:,.0f}".format(adr.krx_prev_close) if adr.krx_prev_close is not none else "—" }}</span>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-label">괴리율</span>
+      <span class="kpi-value mono {{ 'pos' if adr.premium_pct > 0 else ('neg' if adr.premium_pct < 0 else '') }}">
+        {{ "%+.2f"|format(adr.premium_pct) }}%
+      </span>
+      <span class="kpi-note">{{ "ADR 프리미엄" if adr.premium_pct >= 0 else "ADR 할인" }}</span>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="align-left">항목</th>
+          <th>값</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="align-left">USD/KRW</td>
+          <td class="mono num">{{ "%.2f"|format(adr.fx_rate) }}</td>
+        </tr>
+        <tr>
+          <td class="align-left">이론가치 (SKHY 환산)</td>
+          <td class="mono num">${{ "%.2f"|format(adr.theo_price) }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr><td class="empty">ADR 데이터 없음 (조회 실패 또는 아직 첫 갱신 전)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+{% endblock %}
