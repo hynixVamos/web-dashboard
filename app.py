@@ -14,6 +14,9 @@ import os
 from flask import Flask, render_template, jsonify, request
 from datetime import date, datetime
 from new_highs_data import read_report, KST
+from new_highs_notes import annotate_report, append_note, history, StorageUnavailable
+import sqlite3
+from urllib.parse import urlsplit
 
 import cache_refresh
 
@@ -164,7 +167,7 @@ def _highs_report():
         except ValueError:
             raise ValueError("미래 날짜는 조회할 수 없으며 YYYY-MM-DD 형식이어야 합니다.")
     provider = app.config.get("NEW_HIGHS_PROVIDER", read_report)
-    return provider(selected)
+    return annotate_report(provider(selected))
 
 
 @app.route("/new-highs")
@@ -184,6 +187,27 @@ def api_new_highs():
         return jsonify(_highs_report())
     except ValueError as error:
         return jsonify({"error": str(error)}), 400
+
+
+@app.route('/api/new-highs/<ticker>/notes', methods=['GET', 'POST'])
+def api_high_notes(ticker):
+    try:
+        if request.method == 'POST':
+            if request.content_length is not None and request.content_length > 32768:
+                return jsonify(error='입력 내용이 너무 깁니다.'), 413
+            origin = request.headers.get('Origin')
+            if (origin and urlsplit(origin).netloc != request.host) or request.headers.get('Sec-Fetch-Site') == 'cross-site':
+                return jsonify(error='이 페이지에서 다시 저장해 주세요.'), 403
+            if not request.is_json:
+                return jsonify(error='JSON 형식으로 요청해 주세요.'), 415
+            note = append_note(ticker, request.get_json(silent=True))
+            return jsonify(note=note), 201
+        return jsonify(notes=history(ticker))
+    except ValueError as error:
+        return jsonify(error=str(error)), 400
+    except (StorageUnavailable, sqlite3.Error, OSError):
+        app.logger.exception('Manual notes storage unavailable')
+        return jsonify(error='기록 저장소에 연결하지 못했습니다. 입력 내용을 유지한 채 다시 시도해 주세요.'), 503
 
 
 @app.route("/health")
