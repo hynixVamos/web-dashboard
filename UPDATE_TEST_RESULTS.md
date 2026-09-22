@@ -1,7 +1,7 @@
 # 수정본 검증 결과
 
 - 기준 저장소: `hynixVamos/web-dashboard`, 커밋 `63e1661`.
-- Python 단위/통합 테스트 37개 통과 (네이버 페이지 경계 중복 회귀 테스트 포함).
+- Python 단위/통합 테스트 38개 통과 (페이지 경계 중복 및 미확정 시세 대기 회귀 테스트 포함).
 - 기존 JavaScript 모델 검증 17개 assertion 통과.
 - 새 JavaScript 구문 검사 및 Git 공백 오류 검사 통과.
 - 실제 소스 확인: Nasdaq Trader에서 필터 적용 후 5,914개 종목 목록 수신,

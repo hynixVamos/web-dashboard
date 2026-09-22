@@ -23,7 +23,7 @@
     if(c.state==='collecting')text+=` · 수집 중 ${c.processed||0}/${c.total||'…'}`;
     if(c.state==='error')text+=' · 수집 오류: '+c.error;
     if(report.migration_notice)text+=' · '+report.migration_notice;
-    if(c.state==='waiting_for_source')text+=' · 거래일 데이터 갱신 대기';
+    if(c.state==='waiting_for_source')text+=' · '+(c.reason||'거래일 데이터 갱신 대기');
     if(report.latest_date&&report.latest_date<report.today)text+=` · 최신 제공 거래일 ${report.latest_date}`;
     $('data-status').textContent=text;
     $('data-status').classList.toggle('nh-warning',report.status==='partial'||c.state==='error');

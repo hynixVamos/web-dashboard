@@ -231,6 +231,15 @@ def collect(source=None, root=None, force=False, now=None):
             target = Counter(dates).most_common(1)[0][0]
             datetime.strptime(target,'%Y-%m-%d')
             if target > now.date().isoformat(): raise ValueError('미래 날짜 시세')
+            # The provider can keep quotes OPEN through the after-hours session.
+            # Do not mistake an unfinalized market for thousands of bad symbols.
+            active_quotes = [q for q in quotes.values() if q.get('localTradedAt','')[:10] == target
+                             and q.get('tradeStopType',{}).get('name') == 'TRADING']
+            if active_quotes and not any(q.get('marketStatus') == 'CLOSE' for q in active_quotes):
+                status.update(state='waiting_for_source', target_date=target,
+                              reason='네이버 시세가 아직 장 종료로 확정되지 않았습니다. 확정 후 자동 재시도합니다.')
+                write_json(root/'status.json',status)
+                return status
             existing = read_json(root/'reports'/(target+'.json'),{})
             if existing.get('status')=='complete' and existing.get('calculation_version')==CALCULATION_VERSION and not force:
                 status.update(state='up_to_date',target_date=target,updated_at=existing['updated_at'])

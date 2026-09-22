@@ -97,6 +97,14 @@ class FakeSource:
 class CacheTests(unittest.TestCase):
     def setUp(self):self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name);self.now=datetime(2026,9,5,18,tzinfo=KST)
     def tearDown(self):self.tmp.cleanup()
+    def test_unfinalized_market_waits_without_claiming_collection_failure(self):
+        source = FakeSource()
+        original = source.quotes
+        source.quotes = lambda: {c:{**q,'marketStatus':'OPEN'} for c,q in original().items()}
+        result = collect(source,self.root,now=self.now)
+        self.assertEqual(result['state'],'waiting_for_source')
+        self.assertEqual(source.calls,0)
+        self.assertNotIn('error',result)
     def test_collection_and_completed_day_deduplication(self):
         source=FakeSource();result=collect(source,self.root,now=self.now)
         self.assertEqual(result['state'],'complete');self.assertEqual(source.calls,1)
