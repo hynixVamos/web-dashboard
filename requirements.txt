@@ -2,3 +2,5 @@ flask>=3.0.0
 gunicorn>=21.2.0
 requests>=2.31.0
 waitress>=2.1.2
+yfinance>=0.2.65,<2
+tzdata>=2025.1

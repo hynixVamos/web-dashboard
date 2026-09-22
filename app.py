@@ -19,6 +19,7 @@ import sqlite3
 from urllib.parse import urlsplit
 
 import cache_refresh
+import us_new_highs
 
 app = Flask(__name__)
 
@@ -208,6 +209,25 @@ def api_high_notes(ticker):
     except (StorageUnavailable, sqlite3.Error, OSError):
         app.logger.exception('Manual notes storage unavailable')
         return jsonify(error='기록 저장소에 연결하지 못했습니다. 입력 내용을 유지한 채 다시 시도해 주세요.'), 503
+
+
+@app.route('/us-new-highs')
+def us_new_highs_page():
+    try:
+        report = us_new_highs.read_report(request.args.get('date'))
+    except ValueError as error:
+        return str(error), 400
+    ctx = _common_context('us_new_highs')
+    ctx.pop('_cache')
+    return render_template('us_new_highs.html', report=report, **ctx)
+
+
+@app.route('/api/us-new-highs')
+def api_us_new_highs():
+    try:
+        return jsonify(us_new_highs.read_report(request.args.get('date')))
+    except ValueError as error:
+        return jsonify(error=str(error)), 400
 
 
 @app.route("/health")

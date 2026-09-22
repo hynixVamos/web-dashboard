@@ -5,3 +5,4 @@ __pycache__/
 *.log
 
 data/new_highs/
+data/us_new_highs/

@@ -29,6 +29,7 @@
   <a href="{{ url_for('hyperscaler_page') }}" class="tab {{ 'active' if active_tab=='hyperscaler' else '' }}">하이퍼스케일러</a>
   <a href="{{ url_for('adr_page') }}" class="tab {{ 'active' if active_tab=='adr' else '' }}">ADR</a>
   <a href="{{ url_for('new_highs_page') }}" class="tab {{ 'active' if active_tab=='new_highs' else '' }}">신고가 리포트</a>
+  <a href="{{ url_for('us_new_highs_page') }}" class="tab {{ 'active' if active_tab=='us_new_highs' else '' }}">미국 52주 신고가</a>
 </nav>
 
 {% if last_error %}

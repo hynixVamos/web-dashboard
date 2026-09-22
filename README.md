@@ -1,5 +1,8 @@
 # AI 인프라 트래킹 대시보드 (라이브 웹 버전)
 
+> 2026-09-22 신고가 기능 업데이트: 미국 52주 신고가·한국어 업종 필터 추가,
+> 국내 종가 돌파 기준 및 스팩·리츠 제외. 적용 방법은 [DEPLOY_UPDATE_KO.md](DEPLOY_UPDATE_KO.md)를 확인하세요.
+
 GPU 렌탈가 / 주가수익률 / 하이퍼스케일러 Capex-OCF-FCF를 한 페이지에서 보여주는
 Flask 대시보드. SK하이닉스 ADR 대시보드와 동일한 아키텍처(Flask + gunicorn post_fork
 백그라운드 캐시 스레드 + Render)로 만들었습니다.

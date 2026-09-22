@@ -1,7 +1,7 @@
 """Actual KOSPI/KOSDAQ daily highs: collector -> JSON snapshots -> read-only routes.
 
 No API key; NAVER public quotes/adjusted daily candles and KRX KIND listing metadata.
-High = today's adjusted intraday HIGH strictly exceeds the previous window's HIGH.
+High = today's adjusted CLOSE strictly exceeds the previous window's HIGH.
 20/60: previous 20/60 sessions; 52w: previous 364 calendar days.
 All-time only when the supplied history reaches the KIND listing date.
 """
@@ -21,10 +21,11 @@ import xml.etree.ElementTree as ET
 import requests
 from config import STOCK_UNIVERSE
 from new_highs_data import KST, PERIOD_FIELDS, data_dir, read_json, write_json
+from new_highs_filters import excluded_security
 
 log = logging.getLogger(__name__)
 TIMEOUT = (5, 25)
-CALCULATION_VERSION = 2
+CALCULATION_VERSION = 3
 
 class TableParser(HTMLParser):
     def __init__(self):
@@ -149,8 +150,8 @@ def calculate_signals(candles, listing_date):
             while queue and ((queue[0][0] < i-window) if window else (queue[0][1] < cutoff)):
                 queue.popleft()
             ready = i >= window if window else candles[0]['date'] <= cutoff
-            flags[key] = bool(ready and queue and row['volume'] > 0 and row['high'] > queue[0][2])
-        flags['all'] = bool(complete and i > 0 and row['volume'] > 0 and row['high'] > running_max)
+            flags[key] = bool(ready and queue and row['volume'] > 0 and row['close'] > queue[0][2])
+        flags['all'] = bool(complete and i > 0 and row['volume'] > 0 and row['close'] > running_max)
         previous = signals[-1]['flags'] if signals else {p:False for p in PERIOD_FIELDS}
         new = {p:flags[p] and not previous[p] for p in PERIOD_FIELDS}
         for p in PERIOD_FIELDS: streak[p] = streak[p]+1 if flags[p] else 0
@@ -238,6 +239,11 @@ def collect(source=None, root=None, force=False, now=None):
             for index,(code,meta) in enumerate(universe.items(),1):
                 quote = quotes.get(code)
                 try:
+                    kind = excluded_security(meta.get('name')) or excluded_security((quote or {}).get('stockName'))
+                    if kind:
+                        excluded[code] = kind
+                        results.pop(code, None)
+                        continue
                     if quote is None: raise ValueError('시장 시세에 종목 없음')
                     if quote.get('tradeStopType',{}).get('name') != 'TRADING' or numeric(quote['accumulatedTradingVolume'])==0:
                         excluded[code]='거래정지/거래량 없음';continue
@@ -271,9 +277,9 @@ def collect(source=None, root=None, force=False, now=None):
                           rows=rows,coverage={'total':len(universe),'evaluated':len(valid),'excluded':len(excluded),
                           'failed':len(failures),'all_time_verified':sum(v['all_time_verified'] for v in valid)},
                           failures=failures,excluded=excluded,
-                          basis='수정 일봉 고가 > 직전 20/60 거래일 또는 52주 고가. 역사적은 상장일부터 이력 확보된 종목만 판정.')
+                          basis='수정 일봉 종가 > 직전 20/60 거래일 또는 52주 고가. 스팩·리츠 제외. 역사적은 상장일부터 이력 확보된 종목만 판정.')
             # Never replace an already complete day with a partial retry.
-            if existing.get('status')!='complete' or report['status']=='complete':
+            if existing.get('status')!='complete' or existing.get('calculation_version')!=CALCULATION_VERSION or report['status']=='complete':
                 write_json(root/'reports'/(target+'.json'),report)
             status.update(state=report['status'],updated_at=report['updated_at'],coverage=report['coverage'])
             write_json(root/'status.json',status)

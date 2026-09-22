@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}미국 52주 신고가 · AI 인프라 트래킹{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='new-highs.css') }}">{% endblock %}
+{% block body_class %}new-highs-page{% endblock %}
+{% block content %}
+<section class="panel nh-report" aria-labelledby="us-title">
+  <div class="panel-head nh-heading">
+    <h2 id="us-title">미국 52주 신고가</h2>
+    <button id="us-prev" aria-label="이전 거래일">◀</button>
+    <label>미국 거래일 <input id="us-date" type="date" value="{{ report.date }}" max="{{ report.today }}"></label>
+    <button id="us-next" aria-label="다음 거래일">▶</button>
+    <button id="us-latest">최신</button>
+  </div>
+  <p class="nh-legend">미국 상장 주식·ADR · 정규장 고가가 직전 52주 최고가를 넘은 종목 · ETF·우선주·워런트 등 제외</p>
+  <p class="nh-legend">가격은 USD, 거래일은 뉴욕 기준입니다. 장 마감 후 수집하며, 종가 돌파만 보기로 윗꼬리 돌파를 걸러낼 수 있습니다. 52주 가격 이력이 부족한 신규 상장 종목은 제외합니다.</p>
+  <p id="us-status" class="nh-data-status" role="status"></p>
+  <div class="nh-filters">
+    <label>업종 <select id="us-sector"><option value="">전체</option></select></label>
+    <input id="us-search" type="search" placeholder="티커 / 종목명 검색" aria-label="티커 또는 종목명 검색">
+    <label><input id="us-close-only" type="checkbox"> 종가 돌파만 보기</label>
+    <label>정렬 <select id="us-sort"><option value="change_pct">등락률 높은 순</option><option value="volume">거래량 많은 순</option><option value="ticker">티커 순</option></select></label>
+    <button id="us-reset">초기화</button><button id="us-refresh">새로고침</button>
+  </div>
+  <div id="us-chips" class="chip-row" aria-label="미국 업종 필터"></div>
+  <p id="us-count" aria-live="polite"></p>
+  <div class="table-wrap" tabindex="0" aria-label="미국 신고가 표, 가로 스크롤 가능">
+    <table><thead><tr><th>업종</th><th>티커</th><th>종목명</th><th>종가($)</th><th>등락률</th><th>당일 고가($)</th><th>이전 52주 고가($)</th><th>고가 대비 하락</th><th>거래량(주)</th></tr></thead><tbody id="us-rows"></tbody></table>
+  </div>
+  <p class="nh-legend">업종: Yahoo Finance 업종을 바이오·반도체 등 한국어 분류로 변환합니다. 지정한 종목별 분류를 우선 적용합니다.</p>
+</section>
+<script type="application/json" id="us-initial">{{ report | tojson }}</script>
+<script src="{{ url_for('static', filename='us-new-highs.js') }}" defer></script>
+{% endblock %}

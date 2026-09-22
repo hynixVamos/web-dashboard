@@ -25,6 +25,15 @@ class CalculationTests(unittest.TestCase):
     def test_equal_high_is_not_new_high(self):
         state=calculate_signals(candles([100]*80),'2025-01-01')[-1]
         self.assertFalse(any(state['flags'].values()))
+    def test_upper_wick_does_not_qualify_and_resets_streak(self):
+        data = candles([100]*365+[110,120,130])
+        data[-2].update(close=105, low=100)
+        states = calculate_signals(data, '2025-01-01')
+        self.assertFalse(any(states[-2]['flags'].values()))
+        self.assertEqual(states[-2]['streak']['52w'], 0)
+        self.assertTrue(states[-1]['new']['52w'])
+        data[-1]['close'] = 120
+        self.assertFalse(any(calculate_signals(data, '2025-01-01')[-1]['flags'].values()))
     def test_windows_independent_and_expired_peak(self):
         data=candles([150]+[100]*60+[120])
         state=calculate_signals(data,'2025-01-01')[-1]
@@ -126,11 +135,12 @@ class RouteTests(unittest.TestCase):
             for route in ['/api/gpu','/api/stocks','/api/hyperscaler','/api/adr','/api/new-highs','/health']:
                 self.assertEqual(self.client.get(route).status_code,200,route)
     def test_background_start_is_idempotent(self):
-        with patch.object(dashboard.cache_refresh,'_started',False), patch('threading.Thread') as thread, patch('new_highs_tracker.start_background_refresh') as highs:
+        with patch.object(dashboard.cache_refresh,'_started',False), patch('threading.Thread') as thread, patch('new_highs_tracker.start_background_refresh') as highs, patch('us_new_highs.start_background_refresh') as us_highs:
             dashboard.cache_refresh.start_background_refresh()
             dashboard.cache_refresh.start_background_refresh()
             self.assertEqual(thread.call_count,1)
             highs.assert_called_once()
+            us_highs.assert_called_once()
     def test_future_malformed_and_missing_dates(self):
         for value in ['oops','2026-02-30','20260825','','2999-01-01']:
             self.assertEqual(self.client.get('/api/new-highs',query_string={'date':value}).status_code,400)

@@ -34,10 +34,11 @@ class NoteTests(unittest.TestCase):
         source = {'date': '2026-09-04', 'rows': [{'ticker': '005930', 'sector': '전자', 'reason': '', 'memo': ''}]}
         result = annotate_report(source)
         self.assertEqual(result['rows'][0]['sector'], 'AI 반도체')
-        self.assertEqual(result['rows'][0]['manual_reasons'], ['수주 확대', '실적 개선'])
+        # Existing production behavior: latest nonempty reason follows all dates.
+        self.assertEqual(result['rows'][0]['manual_reasons'], ['다음 날 이유'])
         self.assertEqual(source['rows'][0]['sector'], '전자')
         later = annotate_report({**source, 'date': '2026-09-06'})
-        self.assertEqual(later['rows'][0]['manual_reasons'], [])
+        self.assertEqual(later['rows'][0]['manual_reasons'], ['다음 날 이유'])
         self.assertEqual(later['rows'][0]['sector'], 'AI 반도체')
         self.assertEqual(later['rows'][0]['note_count'], 3)
 

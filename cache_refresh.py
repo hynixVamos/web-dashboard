@@ -241,6 +241,8 @@ def start_background_refresh():
     # Independent long-running scan: preserve existing trackers and their refresh cadence.
     import new_highs_tracker
     new_highs_tracker.start_background_refresh()
+    import us_new_highs
+    us_new_highs.start_background_refresh()
 
 
 def get_cache():

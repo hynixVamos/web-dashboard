@@ -77,5 +77,8 @@ def read_report(selected_date: Optional[str] = None):
     if report is None:
         report = dict(date=selected, rows=[], source='NAVER 시세 / KRX KIND 업종',
                       status='pending' if not dates else 'unavailable', coverage={}, updated_at=None)
+    elif report.get('calculation_version', 0) < 3:
+        report = {**report, 'rows': [], 'status': 'pending', 'coverage': {},
+                  'updated_at': None, 'migration_notice': '이전 고가 기준 리포트입니다. 종가 기준으로 재수집이 필요합니다.'}
     return {**report, 'available_dates': dates, 'today': today, 'is_mock': False,
             'collector': status, 'latest_date': dates[-1] if dates else None}
