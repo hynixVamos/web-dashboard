@@ -180,7 +180,7 @@ def collect(source=None, root=None, now=None, batch_size=250, force=False, delay
                       'basis': '정규장 고가 > 직전 52주 고가 (동일 가격 제외, 52주 미만 상장 이력 제외)'}
             if existing.get('status') != 'complete' or report['status'] == 'complete':
                 write_json(root/'reports'/f'{target}.json', report)
-            status.update(state=report['status'], coverage=coverage)
+            status.update(state=report['status'], coverage=coverage, provider_backoff=consecutive_errors >= 5)
         except Exception as error:
             status.update(state='error', error=str(error)[:300])
             log.exception('미국 신고가 수집 실패')
@@ -222,7 +222,8 @@ def _loop():
         except Exception:
             log.exception('미국 신고가 백그라운드 예외')
             result = {'state': 'error'}
-        time.sleep(60 if result.get('state') == 'partial' and not result.get('failed') else 900)
+        more = result.get('coverage', {}).get('pending', 0) > 0
+        time.sleep(60 if result.get('state') == 'partial' and more and not result.get('provider_backoff') else 900)
 
 
 def start_background_refresh():

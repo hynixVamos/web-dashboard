@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 import app as dashboard
 from new_highs_data import KST, read_report, read_json, write_json
-from new_highs_tracker import (calculate_signals, build_row, collect, collection_lock, parse_listings, parse_candles)
+from new_highs_tracker import (calculate_signals, build_row, collect, collection_lock, parse_listings, parse_candles, NaverSource)
 
 
 def candles(highs, start='2025-01-01'):
@@ -15,6 +15,17 @@ def candles(highs, start='2025-01-01'):
     return [dict(date=(first+timedelta(days=i)).date().isoformat(),open=h,high=h,low=h,close=h,volume=100) for i,h in enumerate(highs)]
 
 class CalculationTests(unittest.TestCase):
+    def test_page_boundary_duplicate_does_not_abort_whole_market(self):
+        source = NaverSource()
+        class Response:
+            def __init__(self, rows): self.rows = rows
+            def json(self): return {'totalCount': 11, 'stocks': self.rows}
+        def get(url, **kwargs):
+            market = url.rsplit('/',1)[-1]
+            codes = range(10) if kwargs['params']['page'] == 1 else [9]
+            return Response([{'itemCode':market+str(i),'stockEndType':'stock'} for i in codes])
+        source.get = get
+        self.assertEqual(len(source.quotes()), 20)
     def test_new_entry_streak_and_reset_per_period(self):
         data=candles([100]*60+[110,120,90,125])
         states=calculate_signals(data,'2025-01-01')

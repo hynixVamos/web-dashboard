@@ -108,7 +108,7 @@ class NaverSource:
     def quotes(self):
         result = {}
         for market in ('KOSPI','KOSDAQ'):
-            seen = set(); expected = None
+            seen = set(); expected = None; received = 0
             for page in range(1, 151):
                 data = self.get('https://m.stock.naver.com/api/stocks/marketValue/'+market,
                                 params={'page':page,'pageSize':100}).json()
@@ -117,14 +117,19 @@ class NaverSource:
                 if expected != total: raise ValueError('수집 중 종목 목록 변경: 다시 시도합니다.')
                 stocks = data['stocks']
                 if not stocks: raise ValueError('시세 페이지가 조기에 종료됐습니다.')
+                received += len(stocks)
                 for stock in stocks:
                     code = stock['itemCode']
-                    if code in seen: raise ValueError('시세 페이지 중복')
+                    # Rankings can move across page boundaries during collection.
+                    # Deduplicate; missing individual equities are reported by collect().
                     seen.add(code)
                     if stock.get('stockEndType') == 'stock':
                         result[code] = {**stock, 'market':market}
-                if len(seen) >= expected: break
-            if len(seen) != expected: raise ValueError('시세 종목 수 불일치')
+                if received >= expected: break
+            if received < expected or len(seen) < expected * 0.9:
+                raise ValueError('시세 종목 목록이 불완전합니다.')
+            if len(seen) != expected:
+                log.warning('%s 시세 페이지 경계 중복 %s건; 누락 주식은 개별 실패로 집계', market, expected-len(seen))
         if not result: raise ValueError('시세 목록이 비어 있습니다.')
         return result
     def candles(self, code):
