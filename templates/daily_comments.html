@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}데일리 코멘트 · AI 인프라 트래킹{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='daily-comments.css') }}">{% endblock %}
+{% block body_class %}journal-page{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='daily-comments.css') }}"><style>.journal-page main{max-width:1720px;gap:12px}.journal-page .tabnav{max-width:1720px;flex-wrap:wrap}.journal-page #journal-status{margin:0 0 8px;min-height:18px}.journal-page .journal-heading{margin-bottom:8px}</style>{% endblock %}
 {% block content %}
 <div class="journal-heading"><div><p class="journal-eyebrow">MARKET JOURNAL</p><h2>데일리 코멘트</h2><p>하루의 시장 생각과 매매 복기를 기록합니다.</p></div><button id="login-open">관리자 로그인</button><button id="logout" hidden>로그아웃</button></div>
 <p id="journal-status" role="status" aria-live="polite"></p>
