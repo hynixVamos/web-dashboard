@@ -106,14 +106,14 @@ def run_once(refresh=False):
     cookies = json.loads(raw)
     if not isinstance(cookies, dict) or not cookies.get('auth_token') or not cookies.get('ct0'):
         raise ValueError('X web session configuration is incomplete')
-    from twikit import Client
+    from x_web_compat import PublicSearchClient
     from us_new_highs import read_report
     report = read_report()
     if not report.get('rows'):
         return 'waiting_for_report'
 
     async def run():
-        client = Client('en-US', timeout=30)
+        client = PublicSearchClient('en-US', timeout=30)
         client.set_cookies(cookies)
         try:
             return await collect(report, client, refresh=refresh)
