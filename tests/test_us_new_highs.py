@@ -1,7 +1,7 @@
 import os
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -65,6 +65,84 @@ class CollectorTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(); self.root = Path(self.tmp.name)
         self.now = datetime(2026,1,2,18,tzinfo=us.NY)
     def tearDown(self): self.tmp.cleanup()
+    def test_profile_failure_keeps_verified_high(self):
+        for profile in (lambda ticker: {}, lambda ticker: (_ for _ in ()).throw(RuntimeError('429 Too Many Requests'))):
+            source = Source(); source.profile = profile
+            result = us.collect(source, self.root, self.now, force=True, delay=0)
+            self.assertEqual(result['state'], 'complete')
+            report = read_json(self.root/'reports/2026-01-01.json', {})
+            self.assertEqual(len(report['rows']), 2)
+            self.assertEqual(report['coverage']['failed'], 0)
+            self.assertEqual(report['diagnostics']['sector_unclassified'], 2)
+            self.assertTrue(all(row['sector'] == '미분류' for row in report['rows']))
+
+    def test_missing_symbols_do_not_stop_other_symbols(self):
+        source = Source()
+        source.universe = lambda: {t:{'name':t,'exchange':'Q'} for t in ['A','B','C','D','E','F','GOOD']}
+        original = source.candles
+        source.candles = lambda ticker: original(ticker) if ticker == 'GOOD' else []
+        result = us.collect(source, self.root, self.now, delay=0)
+        self.assertEqual(result['coverage']['evaluated'], 1)
+        self.assertEqual(result['coverage']['failed'], 6)
+        self.assertFalse(result['provider_backoff'])
+        report = read_json(self.root/'reports/2026-01-01.json', {})
+        self.assertEqual(report['rows'][0]['ticker'], 'GOOD')
+        self.assertEqual(report['diagnostics']['failure_summary'][0]['kind'], 'missing')
+
+    def test_cooldown_and_successful_retry_clear_failure(self):
+        source = Source(); original = source.candles
+        def candles_with_failure(ticker):
+            if ticker == 'AAA': raise TimeoutError('timed out')
+            return original(ticker)
+        source.candles = candles_with_failure
+        us.collect(source, self.root, self.now, delay=0)
+        source.candles = original
+        us.collect(source, self.root, self.now + timedelta(seconds=30), delay=0)
+        self.assertNotIn('AAA', source.calls)
+        result = us.collect(source, self.root, self.now + timedelta(seconds=61), delay=0)
+        self.assertEqual(result['state'], 'complete')
+        saved = read_json(self.root/'checkpoint.json', {})
+        self.assertEqual(saved['failures'], {})
+        self.assertEqual(saved['retry_meta'], {})
+
+    def test_legacy_checkpoint_rotates_retries_after_rate_limit(self):
+        source = Source(); original = source.candles
+        write_json(self.root/'checkpoint.json', {'date':'2026-01-01','version':us.VERSION,
+            'universe':source.universe(),'results':{},'failures':{'AAA':'old error','BBB':'old error'}})
+        def limited(ticker):
+            source.calls.append(ticker)
+            raise RuntimeError('YFRateLimitError Too Many Requests')
+        source.candles = limited
+        first = us.collect(source, self.root, self.now, delay=0)
+        self.assertEqual(source.calls, ['AAA'])
+        source.candles = original
+        second = us.collect(source, self.root, self.now + timedelta(seconds=1), delay=0)
+        self.assertEqual(source.calls, ['AAA', 'BBB'])
+        self.assertEqual(second['coverage']['evaluated'], 1)
+        self.assertEqual(second['coverage']['failed'], 1)
+        checkpoint = read_json(self.root/'checkpoint.json', {})
+        self.assertEqual(checkpoint['retry_meta']['AAA']['kind'], 'rate_limit')
+
+    def test_invalid_prices_remain_unresolved(self):
+        source = Source(); original = source.candles
+        def invalid(ticker):
+            rows = original(ticker)
+            if ticker == 'AAA': rows[-1]['close'] = float('nan')
+            return rows
+        source.candles = invalid
+        result = us.collect(source, self.root, self.now, delay=0)
+        self.assertEqual(result['coverage']['failed'], 1)
+        self.assertEqual(result['state'], 'partial')
+        self.assertEqual(result['diagnostics']['failure_summary'][0]['kind'], 'invalid')
+
+    def test_read_route_diagnoses_legacy_failures_without_exposing_raw_errors(self):
+        write_json(self.root/'reports/2026-01-01.json', {'date':'2026-01-01','rows':[]})
+        write_json(self.root/'checkpoint.json', {'date':'2026-01-01','failures':{'AAA':'timeout private/internal/path'}})
+        with patch.dict(os.environ, {'US_NEW_HIGHS_DATA_DIR':str(self.root)}):
+            response = app.app.test_client().get('/api/us-new-highs?date=2026-01-01')
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json['diagnostics']['failure_summary'][0]['kind'], 'network')
+            self.assertNotIn('private/internal/path', response.get_data(as_text=True))
     def test_resumes_batches_and_does_not_replace_complete_on_failure(self):
         source = Source()
         first = us.collect(source,self.root,self.now,batch_size=1,delay=0)
