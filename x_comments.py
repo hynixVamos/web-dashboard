@@ -16,6 +16,7 @@ from pathlib import Path
 from new_highs_data import read_json, write_json
 
 STATIC = Path(__file__).with_name('static')
+KST = timezone(timedelta(hours=9))
 _started = False
 _lock = threading.Lock()
 
@@ -50,7 +51,7 @@ def normalize_post(post, ticker):
             'created_at': created.isoformat(), 'likes': likes}
 
 
-async def collect(report, client, directory=None, now=None, delay=5):
+async def collect(report, client, directory=None, now=None, delay=5, refresh=False):
     """A bounded daily Top 20 pass; keep good snapshots if a session fails."""
     now = now or datetime.now(timezone.utc)
     directory = Path(directory or STATIC)
@@ -63,10 +64,10 @@ async def collect(report, client, directory=None, now=None, delay=5):
         ticker = row['ticker']
         previous = saved['tickers'].get(ticker, {})
         # One successful search per report date; failed searches retry after 1h.
-        if previous.get('status') in ('ok', 'empty'):
+        if not refresh and previous.get('status') in ('ok', 'empty'):
             continue
         attempted = previous.get('attempted_at')
-        if attempted and now - datetime.fromisoformat(attempted) < timedelta(hours=1):
+        if not refresh and attempted and now - datetime.fromisoformat(attempted) < timedelta(hours=1):
             continue
         try:
             tweets = await client.search_tweet(search_query(ticker, day), 'Top', count=20)
@@ -98,7 +99,7 @@ async def collect(report, client, directory=None, now=None, delay=5):
     return saved
 
 
-def run_once():
+def run_once(refresh=False):
     raw = os.environ.get('X_SESSION_COOKIES_JSON', '')
     if not raw:
         return 'not_configured'
@@ -115,20 +116,67 @@ def run_once():
         client = Client('en-US', timeout=30)
         client.set_cookies(cookies)
         try:
-            return await collect(report, client)
+            return await collect(report, client, refresh=refresh)
         finally:
             await client.http.aclose()
     return asyncio.run(run())
 
 
+def due_slot(now, times=None, weekdays=None):
+    """Korean wall-clock slots, with a 10-minute startup grace window."""
+    local = now.astimezone(KST)
+    times = times if times is not None else os.environ.get('X_REFRESH_TIMES_KST', '08:00,13:00')
+    weekdays = weekdays if weekdays is not None else os.environ.get('X_REFRESH_WEEKDAYS_KST', '2,3,4,5,6')
+    if local.isoweekday() not in {int(d.strip()) for d in weekdays.split(',') if d.strip()}:
+        return None
+    slots = []
+    for value in times.split(','):
+        value = value.strip()
+        if not re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d', value):
+            raise ValueError('X refresh times must use HH:MM')
+        hour, minute = map(int, value.split(':'))
+        slot = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if timedelta(0) <= local - slot < timedelta(minutes=10):
+            slots.append(slot.isoformat())
+    return max(slots) if slots else None
+
+
+def run_scheduled(now=None, state_dir=None, runner=None):
+    """Claim a slot on disk before network I/O, so restarts never repeat it."""
+    now = now or datetime.now(timezone.utc)
+    slot = due_slot(now)
+    if slot is None:
+        return 'outside_schedule'
+    from us_new_highs import root_dir
+    from new_highs_tracker import collection_lock
+    directory = Path(state_dir or root_dir() / 'x-comment-schedule')
+    with collection_lock(directory) as acquired:
+        if not acquired:
+            return 'already_running'
+        path = directory / 'schedule.json'
+        state = read_json(path, {})
+        if state.get('last_slot', '') >= slot:
+            return 'already_attempted'
+        state = {'last_slot': slot, 'started_at': now.isoformat(), 'status': 'running'}
+        write_json(path, state)
+        try:
+            result = (runner or run_once)(refresh=True)
+            state['status'] = result if isinstance(result, str) else result.get('collector_status', 'ready')
+        except Exception:
+            state['status'] = 'error'  # Never log a session-bearing exception.
+        write_json(path, state)
+        return state['status']
+
+
 def _loop():
     while True:
         try:
-            run_once()
+            run_scheduled()
         except Exception:
             # Never log credentials or raw HTTP exception payloads.
             pass
-        threading.Event().wait(3600)
+        # Clock checks are local; no X requests happen outside a due slot.
+        threading.Event().wait(30)
 
 
 def start_background_refresh():

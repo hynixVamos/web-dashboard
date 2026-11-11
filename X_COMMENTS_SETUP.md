@@ -16,9 +16,21 @@ session cookies in this repository, screenshots, public forms, or chat messages.
 The Bearer Token created for the official API is not used by this collector.
 
 When configured, the existing post-fork background startup launches a separate
-hourly worker. It collects up to five excerpts for each of the top 20 rising
-new-high stocks once per report date, pauses five seconds between searches, and
-stops on provider/login/rate errors. Failures can retry after one hour. It never
+scheduled worker. The owner's selected schedule is **Tuesday–Saturday at 08:00
+and 13:00 Asia/Seoul**, including US daylight-saving periods. Configure it with
+`X_REFRESH_TIMES_KST=08:00,13:00` and `X_REFRESH_WEEKDAYS_KST=2,3,4,5,6`
+(ISO weekdays: Monday=1). These are also the code defaults.
+
+The worker checks the local clock every 30 seconds, without querying X. It only
+starts collection within 10 minutes of a scheduled slot; missed windows wait
+until the next slot. Each slot is claimed on disk before requests begin, so a
+restart does not repeat the collection. Keep the schedule state directory on
+the existing persistent data disk to preserve claims across deployments.
+
+Each slot refreshes up to five excerpts for each of the top 20 rising
+new-high stocks, even when the report date has not changed. It pauses five
+seconds between searches and stops on provider/login/rate errors. Failures wait
+until the next scheduled slot; there are no off-schedule X retries. It never
 posts, likes, follows, or uses the paid API. It does not change price collection.
 
 X can expire the session or change its web endpoints; collection is best-effort.
