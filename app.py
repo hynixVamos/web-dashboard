@@ -22,6 +22,15 @@ import cache_refresh
 import us_new_highs
 
 app = Flask(__name__)
+from daily_comments import bp as daily_comments_blueprint
+app.register_blueprint(daily_comments_blueprint)
+
+
+@app.route('/daily-comments')
+def daily_comments_page():
+    ctx = _common_context('daily_comments')
+    ctx.pop('_cache')
+    return render_template('daily_comments.html', **ctx)
 
 
 def _format_updated(iso_str):
