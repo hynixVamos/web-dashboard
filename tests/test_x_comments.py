@@ -2,7 +2,7 @@ import asyncio
 import os
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -73,6 +73,43 @@ class CommentsTests(unittest.TestCase):
         async def search(*args, **kwargs): return [self.tweet('$OTHER revenue beat')]
         result = asyncio.run(x.collect(self.report,SimpleNamespace(search_tweet=search),self.root,self.now,delay=0))
         self.assertEqual(result['tickers']['ZIP'],{'status':'empty','posts':[], 'attempted_at':self.now.isoformat()})
+
+    def test_schedule_is_korean_time_and_only_tuesday_to_saturday(self):
+        # Monday 23:00 UTC is Tuesday 08:00 in Korea.
+        self.assertEqual(x.due_slot(datetime(2026,11,9,23,tzinfo=timezone.utc)),
+                         '2026-11-10T08:00:00+09:00')
+        self.assertEqual(x.due_slot(datetime(2026,11,14,4,tzinfo=timezone.utc)),
+                         '2026-11-14T13:00:00+09:00')
+        self.assertIsNone(x.due_slot(datetime(2026,11,9,8,tzinfo=x.KST)))
+        self.assertIsNone(x.due_slot(datetime(2026,11,15,13,tzinfo=x.KST)))
+        self.assertIsNone(x.due_slot(datetime(2026,11,10,9,tzinfo=x.KST)))
+        self.assertIsNone(x.due_slot(datetime(2026,11,10,8,10,tzinfo=x.KST)))
+        self.assertIsNotNone(x.due_slot(datetime(2026,11,10,8,9,59,tzinfo=x.KST)))
+
+    def test_scheduled_slot_runs_once_across_restarts_and_refreshes_at_second_slot(self):
+        calls = []
+        def runner(**kwargs): calls.append(kwargs); return {'collector_status':'ready'}
+        morning = datetime(2026,11,10,8,tzinfo=x.KST)
+        self.assertEqual(x.run_scheduled(morning,self.root,runner),'ready')
+        self.assertEqual(x.run_scheduled(morning+timedelta(minutes=1),self.root,runner),'already_attempted')
+        self.assertEqual(x.run_scheduled(morning+timedelta(hours=1),self.root,runner),'outside_schedule')
+        self.assertEqual(x.run_scheduled(morning+timedelta(hours=5),self.root,runner),'ready')
+        self.assertEqual(calls,[{'refresh':True},{'refresh':True}])
+
+    def test_scheduled_error_never_retries_outside_next_slot_or_leaks_credentials(self):
+        def runner(**kwargs): raise RuntimeError('auth_token=private-secret')
+        now = datetime(2026,11,10,8,tzinfo=x.KST)
+        self.assertEqual(x.run_scheduled(now,self.root,runner),'error')
+        self.assertEqual(x.run_scheduled(now+timedelta(minutes=1),self.root,runner),'already_attempted')
+        self.assertNotIn('private-secret',(self.root/'schedule.json').read_text())
+
+    def test_scheduled_refresh_replaces_a_successful_cached_search(self):
+        calls=[]
+        async def search(*args,**kwargs): calls.append(args); return [self.tweet()]
+        client=SimpleNamespace(search_tweet=search)
+        asyncio.run(x.collect(self.report,client,self.root,self.now,delay=0))
+        asyncio.run(x.collect(self.report,client,self.root,self.now+timedelta(hours=5),delay=0,refresh=True))
+        self.assertEqual(len(calls),2)
 
 
 if __name__ == '__main__': unittest.main()
