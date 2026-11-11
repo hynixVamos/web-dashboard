@@ -41,6 +41,11 @@ if (typeof document !== 'undefined') (() => {
   help.className = 'nh-legend'; $('us-count').before(help);
   const style = node('style', '.us-research{min-width:260px;text-align:left;white-space:normal}.us-research a{display:inline-block;padding:4px 7px;margin:2px;border:1px solid var(--border);border-radius:4px;color:var(--accent);text-decoration:none}.us-research a:hover{background:var(--accent-soft)}');
   document.head.append(style);
+  const diagnostics = node('details', '');
+  diagnostics.append(node('summary', '수집 실패 원인 / 재시도 현황'));
+  const diagnosticBody = node('div', ''); diagnosticBody.id = 'us-diagnostics';
+  diagnostics.append(diagnosticBody); diagnostics.className = 'nh-legend';
+  $('us-status').after(diagnostics);
   function render() {
     const sector = $('us-sector').value, query = $('us-search').value.trim().toLowerCase();
     const sectors = [...new Set(report.rows.map(r => r.sector))].sort();
@@ -90,6 +95,16 @@ if (typeof document !== 'undefined') (() => {
     if (run.state === 'collecting') status += ` · 진행 ${run.processed || 0}/${run.total || '…'}`;
     if (run.state === 'error') status += ` · 오류: ${run.error}`;
     $('us-status').textContent = status;
+    const diagnostic = report.diagnostics || {};
+    diagnosticBody.replaceChildren();
+    const failures = diagnostic.failure_summary || [];
+    if (failures.length) failures.forEach(group => {
+      diagnosticBody.append(node('p', `${group.label}: ${group.count}종목 · 예: ${(group.tickers || []).join(', ')}`));
+    });
+    else diagnosticBody.append(node('p', c.failed ? '상세 진단을 준비 중입니다. 다음 수집 후 표시됩니다.' : '현재 기록된 가격 수집 실패가 없습니다.'));
+    if (diagnostic.retry_waiting) diagnosticBody.append(node('p', `재시도 대기: ${diagnostic.retry_waiting}종목 · 오류 종류와 시도 횟수에 따라 간격을 늘려 자동 재시도합니다.`));
+    if (diagnostic.next_retry_at) diagnosticBody.append(node('p', `가장 이른 재시도 예정: ${new Date(diagnostic.next_retry_at).toLocaleString('ko-KR', {timeZone: 'Asia/Seoul'})} (한국 시간) · 수집 주기에 따라 늦어질 수 있습니다.`));
+    if (diagnostic.sector_unclassified) diagnosticBody.append(node('p', `업종 미분류: ${diagnostic.sector_unclassified}종목 · 가격 판정은 완료했으며 신고가 목록에 포함됩니다.`));
     $('us-count').textContent = `${report.date} 미국 거래일 · 표시 ${rows.length} / 수집된 신고가 ${report.rows.length} 종목${$('us-top20').checked ? ' · 현재 필터 내 상승률 Top 20' : ''}`;
     $('us-date').value = report.date; $('us-date').max = report.today;
     $('us-prev').disabled = !report.available_dates.some(d => d < report.date);
