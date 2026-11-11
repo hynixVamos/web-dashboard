@@ -313,6 +313,8 @@ def start_background_refresh():
             return
         _started = True
     threading.Thread(target=_loop, name='us-highs-refresh', daemon=True).start()
+    from x_comments import start_background_refresh as start_x_comments
+    start_x_comments()
 
 
 if __name__ == '__main__':
