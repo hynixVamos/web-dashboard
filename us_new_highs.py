@@ -13,6 +13,7 @@ import os
 import re
 import threading
 import time
+from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -25,6 +26,51 @@ from us_sectors import classify
 NY = ZoneInfo('America/New_York')
 VERSION = 1
 log = logging.getLogger(__name__)
+FAILURE_LABELS = {
+    'rate_limit': '공급자 요청 제한', 'network': '통신 오류·시간 초과',
+    'missing': '가격·거래일 데이터 미수신', 'invalid': '가격 검증 실패',
+    'other': '기타 조회 오류',
+}
+
+
+def failure_kind(error):
+    text = (type(error).__name__ + ' ' + str(error)).lower()
+    if any(s in text for s in ('ratelimit', 'rate limit', 'too many requests', '429')):
+        return 'rate_limit'
+    if any(s in text for s in ('timeout', 'timed out', 'connection', 'connect', 'resolve', 'offline', '502', '503', '504')):
+        return 'network'
+    if any(s in text for s in ('미갱신', 'no price', 'pricesmissing', 'possibly delisted', 'no timezone', 'tzmissing')):
+        return 'missing'
+    if any(s in text for s in ('ohlc', '가격 순서', '날짜 중복')):
+        return 'invalid'
+    return 'other'
+
+
+def failure_summary(failures, retry_meta):
+    counts = Counter(retry_meta.get(t, {}).get('kind') or failure_kind(message)
+                     for t, message in failures.items())
+    return [{'kind': k, 'label': FAILURE_LABELS[k], 'count': count,
+             'tickers': sorted(t for t, message in failures.items()
+                               if (retry_meta.get(t, {}).get('kind') or failure_kind(message)) == k)[:10]}
+            for k, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))]
+
+
+def retry_due(meta, now):
+    try:
+        return datetime.fromisoformat(meta['next_retry_at']) <= now
+    except (KeyError, ValueError, TypeError):
+        return True  # Existing checkpoints have no retry metadata.
+
+
+def record_failure(ticker, error, failures, retry_meta, now):
+    kind = failure_kind(error)
+    attempts = retry_meta.get(ticker, {}).get('attempts', 0) + 1
+    base = {'rate_limit': 900, 'network': 60, 'missing': 1800, 'invalid': 3600, 'other': 900}[kind]
+    wait = min(21600, base * 2 ** min(attempts - 1, 5))
+    failures[ticker] = str(error)[:180]
+    retry_meta[ticker] = {'kind': kind, 'attempts': attempts, 'last_attempt_at': now.isoformat(),
+                          'next_retry_at': (now + timedelta(seconds=wait)).isoformat()}
+    return kind
 
 
 def root_dir():
@@ -140,31 +186,46 @@ def collect(source=None, root=None, now=None, batch_size=250, force=False, delay
             if force or saved.get('date') != target or saved.get('version') != VERSION:
                 saved = {'date': target, 'version': VERSION, 'universe': source.universe(), 'results': {}, 'failures': {}}
             universe, results, failures = saved['universe'], saved['results'], saved['failures']
-            remaining = [t for t in universe if t not in results]
-            # New names first; retry failures after the rest of the market has been scanned.
-            remaining.sort(key=lambda t: (t in failures, t))
+            retry_meta = saved.setdefault('retry_meta', {})
+            sector_warnings = saved.setdefault('sector_warnings', {})
+            # Preserve all successful results from v1 checkpoints. Rotate retries so
+            # permanently missing symbols at the front cannot starve other names.
+            remaining = [t for t in universe if t not in results and retry_due(retry_meta.get(t, {}), now)]
+            remaining.sort(key=lambda t: (t in failures, retry_meta.get(t, {}).get('last_attempt_at', ''), t))
             status.update(total=len(universe), processed=len(results))
             write_json(root/'status.json', status)
             consecutive_errors = 0
+            provider_backoff = False
+            profile_backoff = False
             for ticker in remaining[:batch_size]:
                 try:
                     row, excluded = high_row(ticker, universe[ticker], source.candles(ticker), target)
                     if row:
-                        info = source.profile(ticker)
-                        if not info.get('industry') and not info.get('sector'):
-                            raise ValueError('업종 정보 미수신; 재시도 예정')
+                        info = {}
+                        try:
+                            if not profile_backoff:
+                                info = source.profile(ticker) or {}
+                        except Exception as error:
+                            profile_backoff = failure_kind(error) == 'rate_limit'
+                        # Sector enrichment must never discard verified price data.
                         row.update(sector=classify(ticker, info), industry=info.get('industry', ''))
+                        if row['sector'] == '미분류':
+                            sector_warnings[ticker] = '업종 미수신·미분류 (가격 판정 완료)'
+                        else:
+                            sector_warnings.pop(ticker, None)
                     results[ticker] = {'row': row, 'excluded': excluded}
                     failures.pop(ticker, None)
+                    retry_meta.pop(ticker, None)
                     consecutive_errors = 0
                 except Exception as error:
-                    failures[ticker] = str(error)[:180]
-                    consecutive_errors += 1
+                    kind = record_failure(ticker, error, failures, retry_meta, now)
+                    consecutive_errors = consecutive_errors + 1 if kind in ('rate_limit', 'network') else 0
+                    provider_backoff = kind == 'rate_limit' or consecutive_errors >= 5
                 status.update(processed=len(results), failed=len(failures), heartbeat_at=datetime.now(NY).isoformat())
                 write_json(root/'checkpoint.json', saved)
                 write_json(root/'status.json', status)
-                if consecutive_errors >= 5:
-                    break  # stop hammering a rate-limited/unavailable provider
+                if provider_backoff:
+                    break  # Only provider/network errors pause the market scan.
                 if delay:
                     time.sleep(delay)
             if not results:
@@ -172,15 +233,22 @@ def collect(source=None, root=None, now=None, batch_size=250, force=False, delay
             coverage = {'total': len(universe), 'evaluated': len(results), 'failed': len(failures),
                         'pending': len(universe)-len(results)-len(failures),
                         'excluded': sum(bool(r['excluded']) for r in results.values())}
+            diagnostics = {'failure_summary': failure_summary(failures, retry_meta),
+                           'sector_unclassified': len(sector_warnings),
+                           'retry_waiting': sum(not retry_due(retry_meta.get(t, {}), now) for t in failures),
+                           'next_retry_at': min((m['next_retry_at'] for t, m in retry_meta.items()
+                                                 if t in failures), default=None)}
             report = {'date': target, 'rows': [r['row'] for r in results.values() if r['row']],
                       'calculation_version': VERSION, 'coverage': coverage,
                       'status': 'complete' if len(results) == len(universe) else 'partial',
+                      'diagnostics': diagnostics,
                       'updated_at': datetime.now(NY).isoformat(),
                       'source': 'Nasdaq Trader 종목 목록 / Yahoo Finance 일봉·업종',
                       'basis': '정규장 고가 > 직전 52주 고가 (동일 가격 제외, 52주 미만 상장 이력 제외)'}
             if existing.get('status') != 'complete' or report['status'] == 'complete':
                 write_json(root/'reports'/f'{target}.json', report)
-            status.update(state=report['status'], coverage=coverage, provider_backoff=consecutive_errors >= 5)
+            status.update(state=report['status'], coverage=coverage, provider_backoff=provider_backoff,
+                          diagnostics=diagnostics)
         except Exception as error:
             status.update(state='error', error=str(error)[:300])
             log.exception('미국 신고가 수집 실패')
@@ -203,6 +271,17 @@ def read_report(selected=None):
     overrides = read_json(Path(__file__).with_name('us_sector_overrides.json'), {})
     report = {**report, 'rows': [{**r, 'sector': overrides.get(r['ticker']) or r['sector']}
                                for r in report['rows']]}
+    checkpoint = read_json(root/'checkpoint.json', {})
+    if checkpoint.get('date') == selected:
+        # Also diagnose old checkpoints and a scan interrupted before report save.
+        failures = checkpoint.get('failures', {})
+        retry_meta = checkpoint.get('retry_meta', {})
+        report['diagnostics'] = {
+            'failure_summary': failure_summary(failures, retry_meta),
+            'sector_unclassified': len(checkpoint.get('sector_warnings', {})),
+            'retry_waiting': sum(not retry_due(retry_meta.get(t, {}), datetime.now(NY)) for t in failures),
+            'next_retry_at': min((m['next_retry_at'] for t, m in retry_meta.items() if t in failures), default=None),
+        }
     collector = read_json(root/'status.json', {})
     heartbeat = collector.get('heartbeat_at') or collector.get('started_at')
     if collector.get('state') == 'collecting' and heartbeat:
@@ -222,7 +301,8 @@ def _loop():
         except Exception:
             log.exception('미국 신고가 백그라운드 예외')
             result = {'state': 'error'}
-        more = result.get('coverage', {}).get('pending', 0) > 0
+        coverage = result.get('coverage', {})
+        more = coverage.get('pending', 0) > 0 or coverage.get('failed', 0) > 0
         time.sleep(60 if result.get('state') == 'partial' and more and not result.get('provider_backoff') else 900)
 
 
