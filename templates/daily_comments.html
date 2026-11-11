@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block title %}데일리 코멘트 · AI 인프라 트래킹{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='daily-comments.css') }}">{% endblock %}
+{% block content %}
+<div class="journal-heading"><div><p class="journal-eyebrow">MARKET JOURNAL</p><h2>데일리 코멘트</h2><p>하루의 시장 생각과 매매 복기를 기록합니다.</p></div><button id="login-open">관리자 로그인</button><button id="logout" hidden>로그아웃</button></div>
+<p id="journal-status" role="status" aria-live="polite"></p>
+<dialog id="login-dialog"><form id="login-form"><h3>관리자 로그인</h3><p>글 작성·수정은 관리자만 가능합니다.</p><label for="password">관리자 비밀번호</label><input id="password" type="password" autocomplete="current-password" required><p id="login-error" role="alert"></p><div class="journal-actions"><button type="button" id="login-cancel">취소</button><button type="submit" class="primary">로그인</button></div></form></dialog>
+<div class="journal-layout">
+ <aside class="journal-sidebar"><div class="journal-tabs" role="group" aria-label="코멘트 종류"><button id="daily-tab" aria-pressed="true">Daily</button><button id="weekly-tab" aria-pressed="false">Weekly</button></div><button id="new-post" class="primary" hidden>+ 새 글 작성</button><label class="sr-only" for="journal-search">글 검색</label><input id="journal-search" type="search" placeholder="제목·요약·종목 검색"><div id="post-list" aria-label="날짜별 글 목록"></div></aside>
+ <section class="journal-editor" aria-label="코멘트 본문">
+  <div id="journal-empty"><span>✎</span><h3>오늘의 생각을 기록해 보세요</h3><p>아직 저장된 코멘트가 없습니다.<br>관리자 로그인 후 첫 글을 작성할 수 있습니다.</p></div>
+  <div id="post-panel" hidden>
+   <p id="read-only">읽기 전용입니다. 작성·수정하려면 관리자 로그인을 해 주세요.</p>
+   <form id="post-form"><fieldset id="post-fields" disabled>
+    <div class="journal-field"><label for="post-date">날짜</label><input id="post-date" type="date" required></div>
+    <div class="journal-field"><label for="post-title">제목</label><input id="post-title" maxlength="200" placeholder="오늘 시장에서 주목한 변화" required></div>
+    <div class="journal-field"><label for="post-summary">한 줄 요약</label><input id="post-summary" maxlength="500" placeholder="글의 핵심을 한 줄로 정리해 주세요"></div>
+    <div class="journal-field"><label for="post-tickers">관련 종목</label><input id="post-tickers" maxlength="500" placeholder="쉼표로 구분 · 예: 삼성전자, SK하이닉스, MU"></div>
+    <div class="journal-field"><label for="post-tags">태그</label><input id="post-tags" maxlength="500" placeholder="쉼표로 구분 · 예: 반도체, 금리, 매크로"></div>
+   </fieldset>
+   <div class="journal-toolbar"><div><button id="preview-toggle" type="button" aria-pressed="true">미리보기 끄기</button><button id="save-post" type="submit" class="primary" hidden>저장</button></div><div><button id="copy-md" type="button">마크다운 복사</button><button id="copy-html" type="button">서식 HTML 복사</button><button id="download-md" type="button">.md 저장</button></div></div>
+   <p class="journal-hint" id="markdown-hint">마크다운 지원: # 제목 · **굵게** · *기울임* · - 목록 · &gt; 인용 · [링크](https://…)</p>
+   <div class="journal-writing"><label for="post-body" class="sr-only">마크다운 본문</label><textarea id="post-body" readonly maxlength="50000" placeholder="오늘의 시장 흐름, 관심 종목, 매매 복기를 작성해 주세요." required></textarea><article id="post-preview" aria-label="글 미리보기"></article></div>
+   <p id="post-updated" class="journal-hint"></p>
+  </form>
+  </div>
+ </section>
+</div>
+<script src="{{ url_for('static', filename='daily-comments.js') }}" defer></script>
+{% endblock %}

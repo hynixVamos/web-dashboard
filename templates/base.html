@@ -30,6 +30,7 @@
   <a href="{{ url_for('adr_page') }}" class="tab {{ 'active' if active_tab=='adr' else '' }}">ADR</a>
   <a href="{{ url_for('new_highs_page') }}" class="tab {{ 'active' if active_tab=='new_highs' else '' }}">신고가 리포트</a>
   <a href="{{ url_for('us_new_highs_page') }}" class="tab {{ 'active' if active_tab=='us_new_highs' else '' }}">미국 52주 신고가</a>
+  <a href="{{ url_for('daily_comments_page') }}" class="tab {{ 'active' if active_tab=='daily_comments' else '' }}">데일리 코멘트</a>
 </nav>
 
 {% if last_error %}
