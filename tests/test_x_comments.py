@@ -38,6 +38,42 @@ class CommentsTests(unittest.TestCase):
                     {**self.raw,'created_at':'bad date'}]:
             self.assertIsNone(x.normalize_post(raw,'ZIP'))
 
+    def test_default_snapshot_survives_replacing_application_static_files(self):
+        persistent = self.root / 'persistent'
+        bundled = self.root / 'old-static'
+        replacement = self.root / 'new-static'
+        bundled.mkdir(); replacement.mkdir()
+        async def search(*args, **kwargs): return [self.tweet()]
+        with patch.dict(os.environ, {'US_NEW_HIGHS_DATA_DIR': str(persistent)}), patch.object(x, 'STATIC', bundled):
+            result = asyncio.run(x.collect(self.report, SimpleNamespace(search_tweet=search), now=self.now, delay=0))
+            self.assertTrue((persistent/'x-comments'/'x-comments-2026-11-10.json').exists())
+            with patch.object(x, 'STATIC', replacement):
+                loaded = x.read_snapshot('2026-11-10')
+                self.assertEqual(loaded, result)
+                self.assertEqual(len(loaded['tickers']['ZIP']['posts']), 1)
+
+    def test_reads_bundled_legacy_snapshot_without_copying_other_dates(self):
+        bundled = self.root / 'static'
+        write_json(bundled/'x-comments-2026-11-10.json', {'date':'2026-11-10','tickers':{'ZIP':{'posts':[]}}})
+        with patch.dict(os.environ, {'US_NEW_HIGHS_DATA_DIR':str(self.root/'persistent')}), patch.object(x, 'STATIC', bundled):
+            self.assertIn('ZIP', x.read_snapshot('2026-11-10')['tickers'])
+            self.assertEqual(x.read_snapshot('2026-11-11')['collector_status'], 'missing')
+            for invalid in ('../secret', '2026-13-01', '2026-1-01', None):
+                with self.assertRaises(ValueError): x.read_snapshot(invalid)
+
+    def test_snapshot_api_reads_persistent_data_without_calling_x(self):
+        from app import app
+        data = {'date':'2026-11-11','tickers':{'TEST':{'status':'ok','posts':[]}}}
+        with patch.dict(os.environ, {'US_NEW_HIGHS_DATA_DIR':str(self.root)}), patch.object(x, 'run_once') as network:
+            write_json(self.root/'x-comments'/'x-comments-2026-11-11.json', data)
+            client = app.test_client()
+            response = client.get('/api/us-new-highs/x-comments?date=2026-11-11')
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json, data)
+            self.assertEqual(response.headers['Cache-Control'], 'no-store')
+            self.assertEqual(client.get('/api/us-new-highs/x-comments?date=../private').status_code, 400)
+            network.assert_not_called()
+
     def test_calendar_query_covers_report_date_at_year_boundary(self):
         self.assertEqual(x.search_query('ZIP','2026-01-01'),
                          '$ZIP since:2025-12-29 until:2026-01-03 -is:retweet')
