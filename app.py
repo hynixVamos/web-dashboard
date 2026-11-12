@@ -239,6 +239,20 @@ def api_us_new_highs():
         return jsonify(error=str(error)), 400
 
 
+@app.route('/api/us-new-highs/x-comments')
+def api_us_x_comments():
+    from x_comments import read_snapshot
+    try:
+        selected = request.args.get('date')
+        if selected is None:
+            selected = us_new_highs.read_report()['date']
+        response = jsonify(read_snapshot(selected))
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+    except ValueError as error:
+        return jsonify(error=str(error)), 400
+
+
 @app.route("/health")
 def health():
     cache = cache_refresh.get_cache()

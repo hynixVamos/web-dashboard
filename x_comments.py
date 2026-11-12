@@ -21,6 +21,24 @@ _started = False
 _lock = threading.Lock()
 
 
+def snapshot_dir():
+    # Reports and schedule claims already live on the persistent data disk.
+    from us_new_highs import root_dir
+    return root_dir() / 'x-comments'
+
+
+def read_snapshot(day):
+    if not isinstance(day, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', day) or date.fromisoformat(day).isoformat() != day:
+        raise ValueError('날짜는 YYYY-MM-DD 형식이어야 합니다.')
+    filename = f'x-comments-{day}.json'
+    snapshot = read_json(snapshot_dir() / filename, None)
+    if snapshot is None:
+        snapshot = read_json(STATIC / filename, None)
+    if snapshot is None:
+        return {'date': day, 'tickers': {}, 'collector_status': 'missing'}
+    return snapshot
+
+
 def search_query(ticker, day):
     target = date.fromisoformat(day)
     return (f'${ticker} since:{target-timedelta(days=3)} '
@@ -54,10 +72,12 @@ def normalize_post(post, ticker):
 async def collect(report, client, directory=None, now=None, delay=5, refresh=False):
     """A bounded daily Top 20 pass; keep good snapshots if a session fails."""
     now = now or datetime.now(timezone.utc)
-    directory = Path(directory or STATIC)
+    directory = Path(directory) if directory is not None else snapshot_dir()
     day = report['date']
     path = directory / f'x-comments-{date.fromisoformat(day).isoformat()}.json'
     saved = read_json(path, {'date': day, 'tickers': {}})
+    if directory == snapshot_dir() and not path.exists():
+        saved = read_json(STATIC / path.name, saved)
     rows = sorted((r for r in report.get('rows', []) if r.get('change_pct', 0) > 0),
                   key=lambda r: (-r['change_pct'], r['ticker']))[:20]
     for row in rows:
