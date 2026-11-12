@@ -53,7 +53,7 @@ if (typeof document !== 'undefined') (() => {
     if (current && Date.now() - current.at < 300000) return;
     commentCache.set(selected, {state:'loading',at:Date.now()});
     try {
-      const response = await fetch(`/static/x-comments-${encodeURIComponent(selected)}.json`, {cache:'no-store',signal:AbortSignal.timeout(15000)});
+      const response = await fetch(`/api/us-new-highs/x-comments?date=${encodeURIComponent(selected)}`, {cache:'no-store',signal:AbortSignal.timeout(15000)});
       if (!response.ok) throw new Error('Snapshot unavailable');
       const data = await response.json();
       if (data.date !== selected || !data.tickers) throw new Error('Invalid snapshot');
