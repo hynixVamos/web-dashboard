@@ -65,16 +65,22 @@
   async function switchKind(next){
     if(!canLeave())return;
     kind=next;current=null;dirty=false;
-    $('daily-tab').setAttribute('aria-pressed',String(kind==='daily'));$('weekly-tab').setAttribute('aria-pressed',String(kind==='weekly'));
+    for(const tab of ['daily','weekly','report']) $(tab+'-tab').setAttribute('aria-pressed',String(kind===tab));
+    const report=kind==='report';
+    $('new-post').textContent=report?'+ 레포트 정리 작성':'+ 새 글 작성';
+    $('post-title').placeholder=report?'레포트 제목 · 예: 반도체 산업 전망':'오늘 시장에서 주목한 변화';
+    document.querySelector('label[for="post-tags"]').textContent=report?'분류·태그':'태그';
+    $('journal-empty').querySelector('h3').textContent=report?'읽은 레포트를 정리해 보세요':'오늘의 생각을 기록해 보세요';
+    $('journal-empty').querySelector('p').textContent=report?'아직 저장된 레포트가 없습니다. 관리자 로그인 후 첫 레포트를 정리할 수 있습니다.':'아직 저장된 코멘트가 없습니다. 관리자 로그인 후 첫 글을 작성할 수 있습니다.';
     try{await loadList();if(posts.length)show((await api('/'+posts[0].id)).post);else{$('post-panel').hidden=true;$('journal-empty').hidden=false;}status('');}catch(e){status(e.message);}
   }
-  $('daily-tab').onclick=()=>switchKind('daily');$('weekly-tab').onclick=()=>switchKind('weekly');
+  $('daily-tab').onclick=()=>switchKind('daily');$('weekly-tab').onclick=()=>switchKind('weekly');$('report-tab').onclick=()=>switchKind('report');
   $('journal-search').oninput=renderList;
   $('login-open').onclick=()=>{$('login-error').textContent='';$('login-dialog').showModal();$('password').focus();};
   $('login-cancel').onclick=()=>{$('login-dialog').close();$('password').value='';};
   $('login-form').onsubmit=async e=>{e.preventDefault();const button=e.submitter;button.disabled=true;try{const data=await api('/login',{method:'POST',body:JSON.stringify({password:$('password').value})});owner=true;csrf=data.csrf;$('password').value='';$('login-dialog').close();permission();status('관리자로 로그인했습니다. 새 글을 작성하거나 기존 글을 선택해 수정하세요.');}catch(error){$('login-error').textContent=error.message;}finally{button.disabled=false;}};
   $('logout').onclick=async()=>{if(!canLeave())return;try{await api('/logout',{method:'POST',body:'{}'});owner=false;csrf='';dirty=false;if(current?.id)show((await api('/'+current.id)).post);else{$('post-panel').hidden=true;$('journal-empty').hidden=false;}permission();status('로그아웃했습니다.');}catch(e){status(e.message);}};
-  $('new-post').onclick=()=>{if(!canLeave())return;show({date:new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(new Date()),kind});$('post-title').focus();status('새 글은 저장 버튼을 눌러야 공개됩니다.');};
+  $('new-post').onclick=()=>{if(!canLeave())return;show({date:new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(new Date()),kind,body:kind==='report'?'## 출처와 원문\n증권사·작성자: \n원문 링크: \n\n## 핵심 내용\n- \n\n## 주요 수치와 전망\n- \n\n## 나의 투자 관점\n\n\n## 확인할 점\n- ':''});$('post-title').focus();status('새 글은 저장 버튼을 눌러야 공개됩니다.');};
   $('post-form').oninput=()=>{if(owner){dirty=true;renderPreview();status('저장하지 않은 변경 내용이 있습니다.');}};
   $('post-form').onsubmit=async e=>{
     e.preventDefault();if(!owner||saving)return;saving=true;$('save-post').disabled=true;
