@@ -1,4 +1,7 @@
 """Persistent Daily/Weekly/Report journal with owner-only editing."""
+import base64
+import binascii
+import json
 import hashlib
 import hmac
 import os
@@ -43,6 +46,8 @@ def schema(db):
         date TEXT NOT NULL, title TEXT NOT NULL, summary TEXT NOT NULL,
         tickers TEXT NOT NULL, tags TEXT NOT NULL, body TEXT NOT NULL,
         revision INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL)''')
+    if 'photos' not in {row['name'] for row in db.execute('PRAGMA table_info(daily_comments)')}:
+        db.execute("ALTER TABLE daily_comments ADD COLUMN photos TEXT NOT NULL DEFAULT '[]'")
     db.execute('''CREATE TABLE IF NOT EXISTS daily_login_failures (attempted_at REAL NOT NULL)''')
     db.commit()
 
@@ -56,7 +61,7 @@ def protect():
         return jsonify(error='이 사이트에서 다시 시도해 주세요.'), 403
     if not request.is_json:
         return jsonify(error='JSON 요청이 필요합니다.'), 415
-    if request.content_length is None or request.content_length > 150000:
+    if request.content_length is None or request.content_length > 12000000:
         return jsonify(error='입력 내용이 너무 깁니다.'), 413
     if request.path.endswith('/login'):
         return
@@ -131,7 +136,34 @@ def validate(payload):
         raise ValueError('날짜를 확인해 주세요.')
     if not values['title'] or not values['body']:
         raise ValueError('제목과 본문을 입력해 주세요.')
+    photos = payload.get('photos', [])
+    if not isinstance(photos, list) or len(photos) > 8:
+        raise ValueError('사진은 최대 8장까지 첨부할 수 있습니다.')
+    total = 0
+    for photo in photos:
+        if not isinstance(photo, str) or len(photo) > 2800000:
+            raise ValueError('사진 한 장은 2MB 이하여야 합니다.')
+        header, separator, encoded = photo.partition(',')
+        if not separator or header not in ('data:image/jpeg;base64', 'data:image/png;base64', 'data:image/webp;base64'):
+            raise ValueError('JPG, PNG, WebP 사진만 첨부할 수 있습니다.')
+        try:
+            raw = base64.b64decode(encoded, validate=True)
+        except (ValueError, binascii.Error):
+            raise ValueError('사진 형식이 올바르지 않습니다.') from None
+        valid = (header == 'data:image/jpeg;base64' and raw.startswith(b'\xff\xd8\xff') or
+                 header == 'data:image/png;base64' and raw.startswith(b'\x89PNG\r\n\x1a\n') or
+                 header == 'data:image/webp;base64' and raw.startswith(b'RIFF') and raw[8:12] == b'WEBP')
+        total += len(raw)
+        if not valid or len(raw) > 2000000 or total > 8000000:
+            raise ValueError('사진은 한 장 2MB, 전체 8MB 이내로 첨부해 주세요.')
+    values['photos'] = json.dumps(photos)
     return values
+
+
+def serialize_post(row):
+    result = dict(row)
+    result['photos'] = json.loads(result.get('photos', '[]'))
+    return result
 
 
 @bp.route('/api/daily-comments', methods=['GET', 'POST'])
@@ -143,7 +175,7 @@ def posts(post_id=None):
             if request.method == 'GET':
                 if post_id is not None:
                     row = db.execute('SELECT * FROM daily_comments WHERE id=?', (post_id,)).fetchone()
-                    return (jsonify(post=dict(row)) if row else (jsonify(error='글을 찾을 수 없습니다.'), 404))
+                    return (jsonify(post=serialize_post(row)) if row else (jsonify(error='글을 찾을 수 없습니다.'), 404))
                 kind = request.args.get('kind', 'daily')
                 rows = db.execute('''SELECT id,kind,date,title,summary,tickers,tags,revision,updated_at
                     FROM daily_comments WHERE kind=? ORDER BY date DESC,id DESC''', (kind,)).fetchall()
@@ -153,16 +185,16 @@ def posts(post_id=None):
             values['updated_at'] = datetime.now(KST).isoformat(timespec='seconds')
             if post_id is None:
                 cursor = db.execute('''INSERT INTO daily_comments
-                    (kind,date,title,summary,tickers,tags,body,updated_at)
-                    VALUES (:kind,:date,:title,:summary,:tickers,:tags,:body,:updated_at)''', values)
+                    (kind,date,title,summary,tickers,tags,body,updated_at,photos)
+                    VALUES (:kind,:date,:title,:summary,:tickers,:tags,:body,:updated_at,:photos)''', values)
                 post_id = cursor.lastrowid
             else:
                 values.update(id=post_id, revision=payload.get('revision'))
                 cursor = db.execute('''UPDATE daily_comments SET kind=:kind,date=:date,title=:title,
                     summary=:summary,tickers=:tickers,tags=:tags,body=:body,updated_at=:updated_at,
-                    revision=revision+1 WHERE id=:id AND revision=:revision''', values)
+                    photos=:photos,revision=revision+1 WHERE id=:id AND revision=:revision''', values)
                 if not cursor.rowcount:
                     return jsonify(error='다른 창에서 글이 수정되었습니다. 본문을 복사한 뒤 글을 다시 열어 주세요.'), 409
-            return jsonify(post=dict(db.execute('SELECT * FROM daily_comments WHERE id=?', (post_id,)).fetchone()))
-    except (ValueError, TypeError):
-        return jsonify(error='날짜, 제목, 본문과 입력 길이를 확인해 주세요.'), 400
+            return jsonify(post=serialize_post(db.execute('SELECT * FROM daily_comments WHERE id=?', (post_id,)).fetchone()))
+    except (ValueError, TypeError) as error:
+        return jsonify(error=str(error) if isinstance(error, ValueError) and not str(error).startswith('Invalid isoformat') else '날짜, 제목, 본문과 입력 길이를 확인해 주세요.'), 400
