@@ -2,7 +2,7 @@
   'use strict';
   const $ = id => document.getElementById(id);
   const fields = ['date','title','summary','tickers','tags','body'];
-  let owner = false, csrf = '', kind = 'daily', current = null, posts = [], dirty = false, preview = true, saving = false;
+  let owner = false, csrf = '', kind = 'daily', current = null, posts = [], dirty = false, preview = true, saving = false, photos = [], processingPhotos = false;
   const escape = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const inline = s => escape(s).replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
     .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>').replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
@@ -32,19 +32,21 @@
   function renderPreview(){
     const v=values();
     $('post-preview').innerHTML='<h1>'+escape(v.title || '제목')+'</h1><time>'+escape(v.date)+'</time>'+(v.summary?'<p><strong>'+escape(v.summary)+'</strong></p>':'')+markdown(v.body)+(v.tickers||v.tags?'<hr><small>'+escape([v.tickers,v.tags].filter(Boolean).join(' · '))+'</small>':'');
+    renderPhotos();
     $('post-preview').hidden=owner&&!preview;
     $('post-body').hidden=!owner;
     document.querySelector('.journal-writing').classList.toggle('no-preview', !owner||!preview);
   }
   function permission(){
+    $('photo-controls').hidden=!owner;
     $('login-open').hidden=owner;$('logout').hidden=!owner;$('new-post').hidden=!owner;
     $('save-post').hidden=!owner;$('post-fields').disabled=!owner;$('post-body').readOnly=!owner;
     $('read-only').hidden=owner;$('preview-toggle').hidden=!owner;$('markdown-hint').hidden=!owner;
     renderPreview();
   }
-  function canLeave(){return !dirty || confirm('저장하지 않은 변경 내용이 있습니다. 이동할까요?');}
+  function canLeave(){if(processingPhotos||saving){status('사진 처리 또는 저장이 끝난 뒤 이동해 주세요.');return false;}return !dirty || confirm('저장하지 않은 변경 내용이 있습니다. 이동할까요?');}
   function show(post){
-    current=post;dirty=false;
+    current=post;dirty=false;photos=[...(post.photos||[])];$('post-photos').value='';
     $('journal-empty').hidden=true;$('post-panel').hidden=false;
     for(const f of fields)$('post-'+f).value=post[f]||'';
     $('post-updated').textContent=post.updated_at?'마지막 저장 '+new Date(post.updated_at).toLocaleString('ko-KR'): '아직 게시되지 않은 새 글입니다. 저장하면 방문자에게 공개됩니다.';
@@ -67,7 +69,8 @@
     kind=next;current=null;dirty=false;
     for(const tab of ['daily','weekly','report']) $(tab+'-tab').setAttribute('aria-pressed',String(kind===tab));
     const report=kind==='report';
-    $('new-post').textContent=report?'+ 레포트 정리 작성':'+ 새 글 작성';
+    $('report-help').hidden=!report;
+    $('new-post').textContent=report?'+ 새 레포트 작성':'+ 새 글 작성';
     $('post-title').placeholder=report?'레포트 제목 · 예: 반도체 산업 전망':'오늘 시장에서 주목한 변화';
     document.querySelector('label[for="post-tags"]').textContent=report?'분류·태그':'태그';
     $('journal-empty').querySelector('h3').textContent=report?'읽은 레포트를 정리해 보세요':'오늘의 생각을 기록해 보세요';
@@ -83,8 +86,43 @@
   $('new-post').onclick=()=>{if(!canLeave())return;show({date:new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(new Date()),kind,body:kind==='report'?'## 출처와 원문\n증권사·작성자: \n원문 링크: \n\n## 핵심 내용\n- \n\n## 주요 수치와 전망\n- \n\n## 나의 투자 관점\n\n\n## 확인할 점\n- ':''});$('post-title').focus();status('새 글은 저장 버튼을 눌러야 공개됩니다.');};
   $('post-form').oninput=()=>{if(owner){dirty=true;renderPreview();status('저장하지 않은 변경 내용이 있습니다.');}};
   $('post-form').onsubmit=async e=>{
-    e.preventDefault();if(!owner||saving)return;saving=true;$('save-post').disabled=true;
-    try{const data=await api(current?.id?'/'+current.id:'',{method:current?.id?'PUT':'POST',body:JSON.stringify({...values(),kind,revision:current?.revision})});show(data.post);await loadList();status('저장했습니다. 방문자에게 공개됩니다.');}catch(error){status(error.message+' 작성 내용은 화면에 유지되어 있습니다.');}finally{saving=false;$('save-post').disabled=false;}
+    e.preventDefault();if(!owner||saving||processingPhotos)return;saving=true;$('save-post').disabled=true;$('post-photos').disabled=true;renderPhotos();
+    try{const data=await api(current?.id?'/'+current.id:'',{method:current?.id?'PUT':'POST',body:JSON.stringify({...values(),photos,kind,revision:current?.revision})});show(data.post);await loadList();status(kind==='report'?'저장했습니다. 같은 날짜에 더 올리려면 + 새 레포트 작성을 눌러 주세요.':'저장했습니다. 방문자에게 공개됩니다.');}catch(error){status(error.message+' 작성 내용은 화면에 유지되어 있습니다.');}finally{saving=false;$('save-post').disabled=false;$('post-photos').disabled=false;renderPhotos();}
+  };
+  function renderPhotos(){
+    const gallery=$('photo-gallery');gallery.replaceChildren();
+    for(const [index,src] of photos.entries()){
+      const figure=document.createElement('figure');
+      const link=document.createElement('a');link.href=src;link.target='_blank';link.rel='noopener';
+      const img=document.createElement('img');img.src=src;img.alt='첨부 사진 '+(index+1);img.loading='lazy';link.append(img);figure.append(link);
+      if(owner){const remove=document.createElement('button');remove.type='button';remove.textContent='사진 '+(index+1)+' 제거';remove.disabled=saving||processingPhotos;
+        remove.onclick=()=>{photos.splice(index,1);dirty=true;renderPreview();status('사진 변경 후 저장을 눌러 주세요.');};figure.append(remove);}
+      gallery.append(figure);
+    }
+  }
+  async function preparePhoto(file){
+    if(!['image/jpeg','image/png','image/webp'].includes(file.type))throw Error('JPG, PNG, WebP 사진을 선택해 주세요.');
+    if(file.size>20000000)throw Error('원본 사진은 한 장 20MB 이하로 선택해 주세요.');
+    const bitmap=await createImageBitmap(file);
+    try{
+      const scale=Math.min(1,1600/Math.max(bitmap.width,bitmap.height));
+      const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));
+      const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);
+      const src=canvas.toDataURL('image/jpeg',0.82);
+      if(src.length>2600000)throw Error('사진이 너무 큽니다. 더 작은 사진을 선택해 주세요.');
+      return src;
+    }finally{bitmap.close();}
+  }
+  $('post-photos').onchange=async()=>{
+    if(!owner||saving||processingPhotos)return;
+    const files=[...$('post-photos').files];
+    if(photos.length+files.length>8){status('사진은 최대 8장까지 첨부할 수 있습니다.');$('post-photos').value='';return;}
+    processingPhotos=true;$('save-post').disabled=true;$('post-photos').disabled=true;$('new-post').disabled=true;
+    status('사진을 준비하고 있습니다.');
+    try{const additions=[];for(const file of files)additions.push(await preparePhoto(file));
+      if([...photos,...additions].reduce((sum,p)=>sum+p.length*0.75,0)>8000000)throw Error('첨부 사진 전체 크기는 8MB 이하여야 합니다.');
+      photos.push(...additions);dirty=true;renderPreview();status('사진을 첨부했습니다. 저장을 눌러 글과 함께 저장해 주세요.');
+    }catch(error){status(error.message);}finally{processingPhotos=false;$('save-post').disabled=false;$('post-photos').disabled=false;$('new-post').disabled=false;$('post-photos').value='';renderPhotos();}
   };
   $('preview-toggle').onclick=()=>{preview=!preview;$('preview-toggle').textContent=preview?'미리보기 끄기':'미리보기 켜기';$('preview-toggle').setAttribute('aria-pressed',String(preview));renderPreview();};
   function exportMarkdown(){const v=values();return '# '+v.title+'\n\n'+v.date+'\n\n'+(v.summary?v.summary+'\n\n':'')+v.body+'\n\n'+(v.tickers?'관련 종목: '+v.tickers+'\n':'')+(v.tags?'태그: '+v.tags+'\n':'');}
