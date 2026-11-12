@@ -43,6 +43,58 @@ class JournalTests(unittest.TestCase):
         self.client.post('/api/daily-comments/logout',json={},headers=headers)
         self.assertEqual(self.client.put(path,json=changed,headers=headers).status_code,401)
 
+    def test_report_separate_storage_editing_and_permissions(self):
+        headers = self.login()
+        daily = self.client.post('/api/daily-comments', json=self.post, headers=headers).json['post']
+        report = {**self.post, 'kind': 'report', 'title': '산업 레포트', 'tags': '반도체'}
+        response = self.client.post('/api/daily-comments', json=report, headers=headers)
+        self.assertEqual(response.status_code, 200)
+        saved = response.json['post']
+        public = self.app.test_client()
+        self.assertEqual([p['id'] for p in public.get('/api/daily-comments?kind=report').json['posts']], [saved['id']])
+        self.assertEqual([p['id'] for p in public.get('/api/daily-comments?kind=daily').json['posts']], [daily['id']])
+        self.assertEqual(public.get('/api/daily-comments?kind=weekly').json['posts'], [])
+        path = '/api/daily-comments/' + str(saved['id'])
+        changed = {**report, 'body': '수정된 핵심 내용', 'revision': saved['revision']}
+        self.assertEqual(public.put(path, json=changed).status_code, 401)
+        self.assertEqual(self.client.put(path, json=changed, headers=headers).status_code, 200)
+        self.assertEqual(public.get(path).json['post']['body'], changed['body'])
+
+    def test_report_photos_multiple_same_day_and_edit(self):
+        import base64
+        photo = 'data:image/png;base64,' + base64.b64encode(bytes.fromhex('89504e470d0a1a0a')).decode()
+        headers = self.login()
+        payload = {**self.post, 'kind': 'report', 'photos': [photo, photo]}
+        first = self.client.post('/api/daily-comments', json=payload, headers=headers).json['post']
+        second = self.client.post('/api/daily-comments', json={**payload, 'title': '두 번째 레포트'}, headers=headers).json['post']
+        self.assertNotEqual(first['id'], second['id'])
+        public = self.app.test_client()
+        listing = public.get('/api/daily-comments?kind=report').json['posts']
+        self.assertEqual(len(listing), 2)
+        self.assertEqual(listing[0]['id'], second['id'])
+        self.assertNotIn('photos', listing[0])
+        path = '/api/daily-comments/' + str(first['id'])
+        self.assertEqual(public.get(path).json['post']['photos'], [photo, photo])
+        changed = {**payload, 'photos': [photo], 'revision': first['revision']}
+        self.assertEqual(self.client.put(path, json=changed, headers=headers).status_code, 200)
+        self.assertEqual(public.get(path).json['post']['photos'], [photo])
+        self.assertEqual(public.post('/api/daily-comments', json=payload).status_code, 401)
+        for photos in ([photo]*9, ['data:image/svg+xml;base64,PHN2Zz4='], ['data:image/png;base64,bad'], ['data:image/jpeg;base64,SGVsbG8=']):
+            self.assertEqual(self.client.post('/api/daily-comments', json={**payload, 'photos': photos}, headers=headers).status_code, 400)
+        self.assertEqual(public.get(path).json['post']['photos'], [photo])
+
+    def test_existing_database_migrates_without_losing_posts(self):
+        from daily_comments import db_open, schema
+        with db_open() as db:
+            db.execute("CREATE TABLE daily_comments (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, date TEXT NOT NULL, title TEXT NOT NULL, summary TEXT NOT NULL, tickers TEXT NOT NULL, tags TEXT NOT NULL, body TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL)")
+            db.execute("INSERT INTO daily_comments (kind,date,title,summary,tickers,tags,body,updated_at) VALUES ('daily','2026-11-11','기존 글','','','','보관할 본문','2026-11-11')")
+            db.commit()
+            schema(db)
+            schema(db)
+        post = self.client.get('/api/daily-comments/1').json['post']
+        self.assertEqual(post['body'], '보관할 본문')
+        self.assertEqual(post['photos'], [])
+
     def test_bad_input_and_cross_site(self):
         headers=self.login()
         self.assertEqual(self.client.post('/api/daily-comments',json=self.post,headers={**headers,'Origin':'https://evil.invalid'}).status_code,403)
