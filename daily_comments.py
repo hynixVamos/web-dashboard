@@ -1,4 +1,4 @@
-"""Persistent Daily/Weekly journal with owner-only editing."""
+"""Persistent Daily/Weekly/Report journal with owner-only editing."""
 import hashlib
 import hmac
 import os
@@ -125,8 +125,8 @@ def validate(payload):
         if not isinstance(value, str) or len(value) > limit:
             raise ValueError('입력 길이 또는 형식을 확인해 주세요.')
         values[name] = value.strip()
-    if values['kind'] not in ('daily', 'weekly'):
-        raise ValueError('Daily 또는 Weekly를 선택해 주세요.')
+    if values['kind'] not in ('daily', 'weekly', 'report'):
+        raise ValueError('Daily, Weekly 또는 레포트 정리를 선택해 주세요.')
     if date.fromisoformat(values['date']).isoformat() != values['date']:
         raise ValueError('날짜를 확인해 주세요.')
     if not values['title'] or not values['body']:
