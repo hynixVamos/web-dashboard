@@ -1,11 +1,11 @@
-"""Persistent rolling 5/20-session equity return rankings; routes never fetch prices."""
+"""Persistent previous-calendar-week/month equity return rankings; routes never fetch prices."""
 import math
 import os
 import re
 import threading
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from new_highs_data import data_dir, read_json, write_json, KST
@@ -13,8 +13,8 @@ from new_highs_tracker import NaverSource, collection_lock
 from us_new_highs import YahooSource, NY
 from us_sectors import classify
 
-VERSION = 1
-WINDOWS = {'weekly': 5, 'monthly': 20}
+VERSION = 2
+WINDOWS = ('weekly', 'monthly')
 
 
 def root_dir():
@@ -45,24 +45,41 @@ def kr_sector(industry):
     return industry or '미분류'
 
 
-def return_row(ticker, meta, candles, target, bases):
+def calendar_periods(today, sessions):
+    week_start = today - timedelta(days=today.weekday()+7)
+    week_end = week_start + timedelta(days=4)
+    month_end = today.replace(day=1) - timedelta(days=1)
+    month_start = month_end.replace(day=1)
+    result = {}
+    sessions = sorted(set(sessions))
+    for name, start, finish in [('weekly', week_start, week_end), ('monthly', month_start, month_end)]:
+        inside = [d for d in sessions if start.isoformat() <= d <= finish.isoformat()]
+        before = [d for d in sessions if d < start.isoformat()]
+        if not inside or not before:
+            raise ValueError('기간별 거래일 이력이 부족합니다.')
+        result[name] = dict(start=inside[0], end=inside[-1], base=before[-1],
+                            calendar_start=start.isoformat(), calendar_end=finish.isoformat(), sessions=len(inside))
+    return result
+
+
+def return_row(ticker, meta, candles, target, periods):
     relevant = [r for r in candles if r['date'] <= target]
     if len({r['date'] for r in relevant}) != len(relevant):
         raise ValueError('일봉 날짜 중복')
     by_date = {r['date']: r for r in relevant}
-    last = by_date.get(target)
-    if not last or not math.isfinite(float(last['close'])) or last['close'] <= 0:
-        raise ValueError('기준일 종가 미수신')
-    if not math.isfinite(float(last.get('volume', 0))):
-        raise ValueError('거래량 미수신')
-    if float(last.get('volume', 0)) <= 0:
-        return None
     row = dict(ticker=ticker, name=meta['name'], market=meta['market'], sector=meta.get('sector', '미분류'),
-               industry=meta.get('industry', ''), close=last['close'], volume=last['volume'])
-    for period, base in bases.items():
-        previous = by_date.get(base)
-        value = float(previous['close']) if previous else 0
-        row[period] = (float(last['close']) / value - 1) * 100 if math.isfinite(value) and value > 0 else None
+               industry=meta.get('industry', ''))
+    for period, span in periods.items():
+        previous, last = by_date.get(span['base']), by_date.get(span['end'])
+        row[period] = None
+        row[period+'_close'] = None
+        row[period+'_volume'] = None
+        if previous and last:
+            base, close, volume = float(previous['close']), float(last['close']), float(last.get('volume',0))
+            if all(math.isfinite(n) for n in (base, close, volume)) and base > 0 and close > 0 and volume > 0:
+                row[period] = (close/base-1)*100
+                row[period+'_close'] = close
+                row[period+'_volume'] = volume
     return row if any(row.get(p) is not None for p in WINDOWS) else None
 
 
@@ -70,12 +87,14 @@ def read_report(market):
     if market not in ('kr', 'us'):
         raise ValueError('한국 또는 미국 시장을 선택해 주세요.')
     saved = read_json(root_dir()/market/'report.json', None)
-    if saved is None:
+    if saved is None or saved.get('version') != VERSION:
         return dict(market=market, rows=[], status='pending', coverage={}, basis={}, date=None)
     return saved
 
 
-def collect(market, source=None, root=None, batch_size=400):
+def collect(market, source=None, root=None, batch_size=400, today=None):
+    today = today or datetime.now(KST).date()
+    period_key = (today-timedelta(days=today.weekday())).isoformat() + ':' + today.strftime('%Y-%m')
     directory = Path(root or root_dir()) / market
     with collection_lock(directory) as acquired:
         if not acquired:
@@ -83,25 +102,15 @@ def collect(market, source=None, root=None, batch_size=400):
         previous = read_json(directory/'report.json', {})
         try:
             source = source or (NaverSource() if market == 'kr' else YahooSource())
-            if market == 'kr':
-                if datetime.now(KST).weekday() < 5 and datetime.now(KST).hour < 16:
-                    return {'status': 'waiting_for_close'}
-                quotes = source.quotes()
-                target = Counter(q['localTradedAt'][:10] for q in quotes.values() if q.get('localTradedAt')).most_common(1)[0][0]
-                if not any(q.get('marketStatus') == 'CLOSE' for q in quotes.values()):
-                    return {'status': 'waiting_for_close'}
-                reference = source.candles('005930')
-            else:
-                target = source.target_date(datetime.now(NY))
-                reference = source.candles('SPY')
-            if previous.get('date') == target and previous.get('status') == 'complete' and previous.get('version') == VERSION:
+            reference = source.candles('005930' if market == 'kr' else 'SPY')
+            dates = sorted({r['date'] for r in reference if r['date'] <= today.isoformat()})
+            periods = calendar_periods(today, dates)
+            target = max(span['end'] for span in periods.values())
+            if previous.get('date') == target and previous.get('status') == 'complete' and previous.get('version') == VERSION and previous.get('period_key') == period_key:
                 return previous
-            dates = sorted({r['date'] for r in reference if r['date'] <= target})
-            if len(dates) < 21 or dates[-1] != target:
-                raise ValueError('기간별 기준 거래일을 확인하지 못했습니다.')
-            bases = {p: dates[-n-1] for p, n in WINDOWS.items()}
+            bases = {p: span['base'] for p, span in periods.items()}
             state = read_json(directory/'checkpoint.json', {})
-            if state.get('date') != target or state.get('version') != VERSION:
+            if state.get('date') != target or state.get('version') != VERSION or state.get('period_key') != period_key:
                 if market == 'kr':
                     universe = {t: dict(name=m['name'], market=m['market'], industry=m.get('sector',''), sector=kr_sector(m.get('sector','')))
                                 for t,m in source.listings().items() if m['listing_date'] <= target and not re.search(r'스팩|기업인수목적',m['name'])}
@@ -109,27 +118,24 @@ def collect(market, source=None, root=None, batch_size=400):
                     universe = {t: dict(name=m['name'], market='NASDAQ') for t,m in source.universe().items() if m['exchange'] == 'Q'}
                 if not universe:
                     raise ValueError('상장 종목 목록이 비어 있습니다.')
-                state = dict(date=target, version=VERSION, universe=universe, results={}, failures={})
+                state = dict(date=target, version=VERSION, period_key=period_key, universe=universe, results={}, failures={})
             universe, results, failures = state['universe'], state['results'], state['failures']
             remaining = [t for t in universe if t not in results and t not in failures]
             # Finish all unattempted symbols before retrying provider failures.
             remaining = remaining or [t for t in failures if t not in results]
             def fetch(ticker):
                 if market == 'kr':
-                    quote = quotes.get(ticker, {})
-                    if quote.get('marketStatus') != 'CLOSE' or quote.get('localTradedAt','')[:10] != target:
-                        raise ValueError('확정 종가 미수신')
                     cached = read_json(data_dir()/'candles'/(ticker+'.json'), {})
                     candles = cached.get('candles') if cached.get('date') == target else None
                     if not candles:
                         candles = source.candles(ticker)
                 else:
                     candles = source.candles(ticker)
-                return return_row(ticker, universe[ticker], candles, target, bases)
+                return return_row(ticker, universe[ticker], candles, target, periods)
             def save():
                 rows = [r for r in results.values() if r is not None]
                 pending = len(universe)-len(results)-len(failures)
-                report = dict(version=VERSION,market=market,date=target,basis=bases,rows=rows,
+                report = dict(version=VERSION,period_key=period_key,market=market,date=target,basis=bases,periods=periods,rows=rows,
                               status='complete' if len(results)==len(universe) else 'partial',
                               updated_at=datetime.now(KST).isoformat(),
                               coverage=dict(total=len(universe),evaluated=len(results),failed=len(failures),pending=pending,
