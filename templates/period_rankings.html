@@ -8,13 +8,13 @@
 <section class="panel nh-report">
  <p class="nh-legend">PERFORMANCE LEADERS</p><h2>주간·월간 상승률</h2>
  <p class="nh-legend">한국 코스피·코스닥 통합 / 미국 나스닥 상장 주식·ADR. ETF·ETN·우선주 등은 제외하며, 한국은 스팩도 제외합니다.</p>
- <div class="rank-controls"><div class="rank-switch" role="group" aria-label="시장"><button id="rank-kr" aria-pressed="true">한국 · 코스피+코스닥</button><button id="rank-us" aria-pressed="false">미국 · 나스닥</button></div><div class="rank-switch" role="group" aria-label="기간"><button id="rank-weekly" aria-pressed="true">주간 · 5거래일</button><button id="rank-monthly" aria-pressed="false">월간 · 20거래일</button></div></div>
- <div class="rank-stats"><div class="rank-stat"><small>기준 거래일</small><strong id="rank-date">—</strong></div><div class="rank-stat"><small>비교 기준일</small><strong id="rank-base">—</strong></div><div class="rank-stat"><small>집계 진행률</small><strong id="rank-coverage">—</strong></div></div>
+ <div class="rank-controls"><div class="rank-switch" role="group" aria-label="시장"><button id="rank-kr" aria-pressed="true">한국 · 코스피+코스닥</button><button id="rank-us" aria-pressed="false">미국 · 나스닥</button></div><div class="rank-switch" role="group" aria-label="기간"><button id="rank-weekly" aria-pressed="true">지난주 · 월~금</button><button id="rank-monthly" aria-pressed="false">지난달 · 전체 거래일</button></div></div>
+ <div class="rank-stats"><div class="rank-stat"><small>집계 거래일</small><strong id="rank-date">—</strong></div><div class="rank-stat"><small>비교 기준일</small><strong id="rank-base">—</strong></div><div class="rank-stat"><small>집계 진행률</small><strong id="rank-coverage">—</strong></div></div>
  <p id="rank-status" role="status" aria-live="polite">저장된 순위를 불러오는 중…</p><p id="rank-notice" role="status"></p>
  <div class="nh-filters"><label>섹터 <select id="rank-sector"><option value="">전체</option></select></label><input id="rank-search" type="search" placeholder="종목명·티커 검색" aria-label="상위 100위 내 종목 검색"><button id="rank-refresh">새로고침</button></div>
  <p id="rank-count" class="nh-legend"></p>
- <div class="nh-table-wrap" role="region" aria-label="기간별 상승률 순위" tabindex="0" style="overflow-x:auto"><table class="rank-table"><thead><tr><th>순위</th><th>섹터</th><th>종목명</th><th>티커·시장</th><th id="rank-return-head">주간 상승률</th><th>종가</th><th>거래량</th></tr></thead><tbody id="rank-rows"><tr><td colspan="7" class="rank-empty">불러오는 중…</td></tr></tbody></table></div>
- <p class="nh-legend">상승률 = (최신 확정 종가 ÷ 5/20거래일 전 종가 − 1) × 100. 달력상 한 주·한 달이 아닌 이동 기간이며, 배당 재투자는 포함하지 않습니다. 분할 등 가격 조정을 반영한 일봉을 사용합니다. 기간 이력이 부족하거나 기준일 가격이 없는 종목은 해당 기간에서 제외합니다.</p>
+ <div class="nh-table-wrap" role="region" aria-label="기간별 상승률 순위" tabindex="0" style="overflow-x:auto"><table class="rank-table"><thead><tr><th>순위</th><th>섹터</th><th>종목명</th><th>티커·시장</th><th id="rank-return-head">주간 상승률</th><th>기간 말 종가</th><th>기간 말 거래량</th></tr></thead><tbody id="rank-rows"><tr><td colspan="7" class="rank-empty">불러오는 중…</td></tr></tbody></table></div>
+ <p class="nh-legend">주간은 한국 시간 달력 기준 지난주 월요일~금요일, 월간은 지난달 1일~말일의 실제 거래일을 집계합니다. 상승률 = (해당 기간 마지막 거래일 종가 ÷ 해당 기간 시작 직전 거래일 종가 − 1) × 100. 휴장일은 제외하며, 월요일이 휴장일이면 화요일부터 집계합니다. 배당 재투자는 포함하지 않고 분할 등 가격 조정을 반영합니다. 기준 가격이 없는 종목은 해당 기간에서 제외합니다.</p>
  <p class="nh-legend">섹터: 한국은 KRX KIND 업종을 묶고, 미국은 공급자 업종을 반도체·바이오·소프트웨어 등 한국어로 분류합니다. 업종이 확인되지 않은 종목은 미분류로 표시합니다. 순위는 각 기간 전체 대상 중 상위 100위이며, 검색·섹터 필터는 이 100개 안에서 적용됩니다.</p>
 </section><script src="{{ url_for('static', filename='period-rankings.js') }}" defer></script>
 {% endblock %}
