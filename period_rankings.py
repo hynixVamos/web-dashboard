@@ -53,6 +53,8 @@ def return_row(ticker, meta, candles, target, bases):
     last = by_date.get(target)
     if not last or not math.isfinite(float(last['close'])) or last['close'] <= 0:
         raise ValueError('기준일 종가 미수신')
+    if not math.isfinite(float(last.get('volume', 0))):
+        raise ValueError('거래량 미수신')
     if float(last.get('volume', 0)) <= 0:
         return None
     row = dict(ticker=ticker, name=meta['name'], market=meta['market'], sector=meta.get('sector', '미분류'),
