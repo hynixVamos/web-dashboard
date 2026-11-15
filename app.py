@@ -253,6 +253,24 @@ def api_us_x_comments():
         return jsonify(error=str(error)), 400
 
 
+@app.route('/period-rankings')
+def period_rankings_page():
+    ctx = _common_context('period_rankings')
+    ctx.pop('_cache')
+    return render_template('period_rankings.html', **ctx)
+
+
+@app.route('/api/period-rankings')
+def api_period_rankings():
+    import period_rankings
+    try:
+        response = jsonify(period_rankings.read_report(request.args.get('market', 'kr')))
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+    except ValueError as error:
+        return jsonify(error=str(error)), 400
+
+
 @app.route("/health")
 def health():
     cache = cache_refresh.get_cache()
