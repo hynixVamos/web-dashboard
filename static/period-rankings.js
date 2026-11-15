@@ -9,7 +9,7 @@
   $('rank-coverage').textContent=c.total?`${number(c.evaluated)} / ${number(c.total)}`:'첫 수집 대기';
   $('rank-return-head').textContent=label+' 상승률';
   $('rank-status').textContent=(report.updated_at?`갱신 ${new Date(report.updated_at).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'})} (한국 시간) · `:'')+(c.total?`처리 ${c.evaluated} · 대기 ${c.pending} · 조회 실패 ${c.failed} · 거래·이력 부족 제외 ${c.excluded}`:'전체 종목의 확정 종가를 수집하고 있습니다.');
-  $('rank-notice').textContent=report.status==='error'?report.error:report.collection_error?'최근 갱신에 실패해 직전 저장 자료를 표시합니다.':report.status!=='complete'?'수집 중인 잠정 순위입니다. 미처리 종목에 따라 순위가 달라질 수 있습니다.':'';
+  $('rank-notice').textContent=report.status==='error'?report.error:report.collection_error?'최근 갱신에 실패해 직전 저장 자료를 표시합니다.':report.status!=='complete'?(c.total&&!c.pending?`가격 조회에 실패한 ${c.failed}개 종목을 제외한 잠정 순위입니다. 누락 종목은 자동 재시도합니다.`:'수집 중인 잠정 순위입니다. 미처리 종목에 따라 순위가 달라질 수 있습니다.'):'';
   const leaders=(report.rows||[]).filter(r=>Number.isFinite(r[period])).sort((a,b)=>b[period]-a[period]||a.ticker.localeCompare(b.ticker)).slice(0,100).map((r,i)=>({...r,rank:i+1}));
   const selected=$('rank-sector').value;
   const sectors=[...new Set(leaders.map(r=>r.sector||'미분류'))].sort();$('rank-sector').replaceChildren(new Option('전체',''),...sectors.map(s=>new Option(s,s)));
