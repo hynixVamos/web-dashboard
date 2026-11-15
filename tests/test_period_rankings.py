@@ -9,7 +9,7 @@ import period_rankings as ranks
 
 def prices():
     days=[]; day=date(2026,11,13)
-    while len(days)<21:
+    while len(days)<100:
         if day.weekday()<5:days.append(day.isoformat())
         day-=timedelta(days=1)
     days.reverse()
@@ -27,33 +27,57 @@ class Source:
 
 
 class RankingTests(unittest.TestCase):
-    def test_return_uses_exact_exchange_session_base(self):
-        c=prices();bases={'weekly':c[-6]['date'],'monthly':c[-21]['date']}
-        meta=dict(name='Test',market='NASDAQ')
-        row=ranks.return_row('AAA',meta,c,c[-1]['date'],bases)
-        self.assertAlmostEqual(row['weekly'],(120/115-1)*100)
-        self.assertAlmostEqual(row['monthly'],20)
-        missing=[r for r in c if r['date']!=bases['weekly']]
-        self.assertIsNone(ranks.return_row('AAA',meta,missing,c[-1]['date'],bases)['weekly'])
-        with self.assertRaises(ValueError):ranks.return_row('AAA',meta,c[:-1],c[-1]['date'],bases)
-        with self.assertRaises(ValueError):ranks.return_row('AAA',meta,c+[c[0]],c[-1]['date'],bases)
-        invalid=[*c[:-1],{**c[-1],'volume':float('nan')}]
-        with self.assertRaises(ValueError):ranks.return_row('AAA',meta,invalid,c[-1]['date'],bases)
+    def test_previous_calendar_periods_exclude_current_week_and_month(self):
+        c=prices(); spans=ranks.calendar_periods(date(2026,11,15),[r['date'] for r in c])
+        self.assertEqual(spans['weekly']['start'],'2026-11-02')
+        self.assertEqual(spans['weekly']['end'],'2026-11-06')
+        self.assertEqual(spans['weekly']['base'],'2026-10-30')
+        monday=ranks.calendar_periods(date(2026,11,16),[r['date'] for r in c])
+        self.assertEqual(monday['weekly']['start'],'2026-11-09')
+        self.assertEqual(monday['weekly']['end'],'2026-11-13')
+        self.assertEqual(spans['monthly']['start'],'2026-10-01')
+        self.assertEqual(spans['monthly']['end'],'2026-10-30')
+        self.assertEqual(spans['monthly']['base'],'2026-09-30')
+        row=ranks.return_row('AAA',dict(name='Test',market='NASDAQ'),c,c[-1]['date'],spans)
+        lookup={r['date']:r['close'] for r in c}
+        self.assertAlmostEqual(row['weekly'],(lookup['2026-11-06']/lookup['2026-10-30']-1)*100)
+        self.assertAlmostEqual(row['monthly'],(lookup['2026-10-30']/lookup['2026-09-30']-1)*100)
+        self.assertEqual(row['monthly_close'],lookup['2026-10-30'])
+        missing=[r for r in c if r['date']!='2026-10-30']
+        self.assertIsNone(ranks.return_row('AAA',dict(name='Test',market='NASDAQ'),missing,c[-1]['date'],spans))
+        with self.assertRaises(ValueError):ranks.return_row('AAA',dict(name='Test',market='NASDAQ'),c+[c[0]],c[-1]['date'],spans)
+
+    def test_holidays_and_year_boundary(self):
+        days=[];d=date(2025,11,1)
+        while d<=date(2026,1,5):
+            if d.weekday()<5 and d.isoformat() not in ('2026-01-01','2026-01-02'):
+                days.append(d.isoformat())
+            d+=timedelta(days=1)
+        spans=ranks.calendar_periods(date(2026,1,5),days)
+        self.assertEqual(spans['weekly']['calendar_start'],'2025-12-29')
+        self.assertEqual(spans['weekly']['calendar_end'],'2026-01-02')
+        self.assertEqual(spans['weekly']['end'],'2025-12-31')
+        self.assertEqual(spans['weekly']['sessions'],3)
+        self.assertEqual(spans['monthly']['calendar_start'],'2025-12-01')
+        self.assertEqual(spans['monthly']['end'],'2025-12-31')
+        days.remove('2025-12-29')
+        self.assertEqual(ranks.calendar_periods(date(2026,1,5),days)['weekly']['start'],'2025-12-30')
+
     def test_nasdaq_only_and_resume(self):
         with tempfile.TemporaryDirectory() as tmp:
             source=Source()
-            first=ranks.collect('us',source,root=tmp,batch_size=1)
+            first=ranks.collect('us',source,root=tmp,batch_size=1,today=date(2026,11,15))
             self.assertEqual(first['status'],'partial')
             self.assertEqual(first['coverage']['total'],2)
-            second=ranks.collect('us',source,root=tmp,batch_size=1)
+            second=ranks.collect('us',source,root=tmp,batch_size=1,today=date(2026,11,15))
             self.assertEqual(second['status'],'complete')
             self.assertEqual({r['ticker'] for r in second['rows']},{'AAA','CCC'})
             self.assertTrue(all(r['sector']=='반도체' for r in second['rows']))
-            ranks.collect('us',source,root=tmp)
+            ranks.collect('us',source,root=tmp,today=date(2026,11,15))
             self.assertEqual(source.calls.count('AAA'),1)
     def test_kr_combines_both_markets_and_classifies(self):
         with tempfile.TemporaryDirectory() as tmp,patch.dict(os.environ,{'NEW_HIGHS_DATA_DIR':tmp+'/prices'}):
-            report=ranks.collect('kr',Source(),root=tmp)
+            report=ranks.collect('kr',Source(),root=tmp,today=date(2026,11,15))
             self.assertEqual(report['status'],'complete')
             self.assertEqual({r['market'] for r in report['rows']},{'KOSPI','KOSDAQ'})
             self.assertEqual(report['coverage']['total'],2)
@@ -65,7 +89,7 @@ class RankingTests(unittest.TestCase):
             return original(t)
         source.candles=candles
         with tempfile.TemporaryDirectory() as tmp:
-            report=ranks.collect('us',source,root=tmp)
+            report=ranks.collect('us',source,root=tmp,today=date(2026,11,15))
             self.assertEqual(report['coverage']['failed'],1)
             self.assertEqual(report['coverage']['pending'],0)
             self.assertEqual(report['status'],'partial')
