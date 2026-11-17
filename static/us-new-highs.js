@@ -35,30 +35,51 @@ if (typeof document !== 'undefined') (() => {
       return;
     }
     const posts = (entry.posts || []).filter(p => /^https:\/\/x\.com\/[A-Za-z0-9_]{1,15}\/status\/\d+$/.test(p.url || '') && typeof p.text === 'string').slice(0, 5);
-    slot.append(node('strong', `X 코멘트 ${posts.length} · 원문 발췌`));
+    slot.append(node('strong', `X 코멘트 ${posts.length} · 한국어 자동 번역`));
     if (!posts.length) slot.append(node('p', entry.status === 'empty' ? '해당 검색에서 표시할 관련 코멘트를 찾지 못했습니다.' : 'X 수집을 완료하지 못했습니다. 기존 검색 링크를 이용하세요.'));
     posts.forEach(p => {
       const card = node('article', ''), heading = node('a', `@${p.author}`);
       card.className = 'us-x-post'; heading.href = p.url; heading.target = '_blank'; heading.rel = 'noopener noreferrer';
       const date = new Date(p.created_at);
       const stamp = Number.isFinite(date.getTime()) ? date.toLocaleDateString('ko-KR', {timeZone:'America/New_York',month:'2-digit',day:'2-digit'}) : '';
-      card.append(heading, node('small', ` ${stamp} · ♥${num(p.likes)} `), node('p', `${p.text} …`));
+      const translated = typeof p.text_ko === 'string' && p.text_ko.trim();
+      card.append(heading, node('small', ` ${stamp} · ♥${num(p.likes)} `), node('p', `${translated || p.text} …`));
+      if (translated && p.text_ko !== p.text) {
+        const original = node('details', '');
+        original.append(node('summary', '원문 보기'), node('p', `${p.text} …`));
+        card.append(original);
+        card.append(node('small', '자동 번역 · MyMemory'));
+      } else if (!translated) {
+        card.append(node('small', p.translation_status === 'pending' ? '한국어로 번역 중…' : '번역을 이용할 수 없어 원문을 표시합니다.'));
+      }
       slot.append(card);
     });
     if (entry.status === 'error') slot.append(node('small', '재조회에 실패해 이전 수집 내용을 표시합니다.'));
     if (snapshot.collected_at) slot.append(node('small', `수집 ${new Date(snapshot.collected_at).toLocaleString('ko-KR', {timeZone:'Asia/Seoul'})} (한국 시간) · 저장된 코멘트`));
   }
-  async function loadComments(selected) {
+  let translationTimer;
+  const translationPolls = new Map();
+  async function loadComments(selected, force = false) {
     const current = commentCache.get(selected);
-    if (current && Date.now() - current.at < 300000) return;
-    commentCache.set(selected, {state:'loading',at:Date.now()});
+    if (!force && current && Date.now() - current.at < 300000) return;
+    if (!current?.data) commentCache.set(selected, {state:'loading',at:Date.now()});
     try {
       const response = await fetch(`/api/us-new-highs/x-comments?date=${encodeURIComponent(selected)}`, {cache:'no-store',signal:AbortSignal.timeout(15000)});
       if (!response.ok) throw new Error('Snapshot unavailable');
       const data = await response.json();
       if (data.date !== selected || !data.tickers) throw new Error('Invalid snapshot');
       commentCache.set(selected,{state:'ready',at:Date.now(),data});
-    } catch (_) { commentCache.set(selected,{state:'unavailable',at:Date.now()}); }
+      if (report.date === selected) {
+        clearTimeout(translationTimer);
+        const polls = translationPolls.get(selected) || 0;
+        if (data.translation_pending && polls < 30) {
+          translationPolls.set(selected, polls + 1);
+          translationTimer = setTimeout(() => loadComments(selected, true), 5000);
+        }
+      }
+    } catch (_) {
+      if (!current?.data) commentCache.set(selected,{state:'unavailable',at:Date.now()});
+    }
     if (report.date === selected) commentSlots.forEach((slot,ticker)=>drawComments(slot,ticker,selected));
   }
   const filters = document.querySelector('.nh-filters');
@@ -73,7 +94,7 @@ if (typeof document !== 'undefined') (() => {
   volumeInput.type = 'number'; volumeInput.min = '0'; volumeInput.step = '10000';
   volumeInput.id = 'us-min-volume'; volumeInput.placeholder = '0';
   volumeLabel.append(volumeInput); filters.append(volumeLabel);
-  const help = node('p', 'X 코멘트는 공개 게시물의 저장된 발췌이며 작성자 링크에서 원문을 볼 수 있습니다. 미수집 종목은 X 검색을 이용하세요. 코멘트는 작성자의 의견이며 검증된 상승 원인이 아닙니다.');
+  const help = node('p', 'X 코멘트는 공개 게시물의 발췌를 한국어로 자동 번역합니다. 원문 보기 또는 작성자 링크에서 원문을 확인할 수 있습니다. 무료 번역 한도 초과나 오류 시 원문을 표시합니다. 코멘트는 작성자의 의견이며 검증된 상승 원인이 아닙니다.');
   help.className = 'nh-legend'; $('us-count').before(help);
   const style = node('style', '.us-research{text-align:left;white-space:normal;background:var(--panel)}.us-research a{display:inline-block;padding:4px 7px;margin:2px;border:1px solid var(--border);border-radius:4px;color:var(--accent);text-decoration:none}.us-research a:hover{background:var(--accent-soft)}.us-x-comments{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:4px 12px;margin:8px 0;font-size:12px;line-height:1.7}.us-x-comments>strong,.us-x-comments>small,.us-x-comments>p{grid-column:1/-1}.us-x-comments p{margin:5px 0;overflow-wrap:anywhere}.us-x-comments small{color:var(--text-secondary)}.us-x-post{border-left:2px solid var(--accent);padding:3px 9px;margin:6px 0}.us-x-post a{border:0;margin:0;padding:0;font-weight:600}.us-x-post p{white-space:normal}.us-x-comments>strong{color:var(--accent)}.us-stock-row td{font-weight:500}.us-research-row{cursor:default!important}');
   document.head.append(style);
