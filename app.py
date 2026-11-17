@@ -242,11 +242,12 @@ def api_us_new_highs():
 @app.route('/api/us-new-highs/x-comments')
 def api_us_x_comments():
     from x_comments import read_snapshot
+    from x_translation import translated_snapshot
     try:
         selected = request.args.get('date')
         if selected is None:
             selected = us_new_highs.read_report()['date']
-        response = jsonify(read_snapshot(selected))
+        response = jsonify(translated_snapshot(read_snapshot(selected)))
         response.headers['Cache-Control'] = 'no-store'
         return response
     except ValueError as error:
